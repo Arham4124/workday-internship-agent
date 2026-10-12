@@ -1,0 +1,15 @@
+# ---- personal data: never commit ----
+config/profile.yaml
+config/answers.yaml
+config/settings.yaml
+documents/*
+!documents/README.md
+data/
+Dashboard.html
+*.pdf
+.jobagent_secrets
+# ---- environment ----
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

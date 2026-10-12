@@ -1,0 +1,6 @@
+playwright>=1.49
+PyYAML>=6.0
+requests>=2.31
+truststore>=0.9
+keyring>=25.0
+PyMuPDF>=1.24

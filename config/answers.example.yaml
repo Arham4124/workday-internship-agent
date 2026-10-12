@@ -1,0 +1,73 @@
+# Answer bank: your standard answers to questions Workday forms ask. Copy to answers.yaml (`./agent.sh init`).
+# Fill in every "" below (see QUESTIONNAIRE.md). A blank answer means "stop and ask me": the application is
+# paused and the question shows up in `./agent.sh answer`, which saves your reply here for every future form.
+# The first three entries are behaviour rules for the agent — keep them unless you want different behaviour.
+
+- question: How did you hear about this position?
+  answer: "The company's own careers website (that is where the agent finds postings). Choose the company website / careers site option, which may sit inside a category such as '<Company> Source' or 'Website'. Never choose LinkedIn, Indeed, a referral, a career fair, or social media. If no such option exists, choose 'Other' / 'Online job search'."
+- question: Do you meet the basic / required / preferred qualifications listed in the job description?
+  answer: "Compare the posting's list with the profile, item by item. If every item is met: Yes. If some are met and a partial option exists (e.g. 'Yes, some'): choose it. If only Yes/No is offered for PREFERRED qualifications and not all are met: No."
+- question: Which locations are you open to / location preferences?
+  answer: ""   # e.g. "Open to every U.S. location offered (select all when allowed). If asked to rank, put the posting's own location first."
+
+# ---- Work authorization ----
+- question: Are you legally authorized to work in the United States?
+  answer: ""   # Yes / No
+- question: Will you now or in the future require sponsorship for employment visa status (e.g., H-1B)?
+  answer: ""   # Yes / No (F-1 students usually answer Yes)
+- question: Are you a U.S. citizen / U.S. person (export control, ITAR/EAR)?
+  answer: ""
+- question: Do you currently hold an active security clearance?
+  answer: ""
+
+# ---- Eligibility ----
+- question: Are you at least 18 years old?
+  answer: ""
+- question: Are you currently enrolled in a degree program, and will you return to school after the internship?
+  answer: ""   # e.g. "Yes. M.S. in Computer Science, expected May 2028; returning to school after the internship."
+- question: Are you able to work full-time (40 hours/week) during the internship?
+  answer: ""
+- question: When are you available to start / end?
+  answer: ""   # e.g. "Start June 1, 2027; end August 20, 2027."
+- question: Are you willing to relocate?
+  answer: ""
+- question: Are you able to perform the essential functions of the job, with or without reasonable accommodation?
+  answer: ""
+
+# ---- Legal / background ----
+- question: Are you bound by a non-compete, non-solicitation, or any agreement that restricts your ability to work here?
+  answer: ""
+- question: Will you have any other employment, second job, or outside business while employed here (during the internship)?
+  answer: ""
+- question: Are you, or have you been, a government employee or official (including public university or state agency)?
+  answer: ""
+- question: Do you have relatives or close personal relationships with current employees?
+  answer: ""
+- question: Do you have a close friend or relative (spouse, partner, household member, sibling, child, parent, in-law, aunt, uncle, cousin) who is a government official?
+  answer: ""
+- question: Have you ever been convicted of a felony or crime (other than minor traffic violations)?
+  answer: ""
+- question: Have you ever been debarred, suspended, or excluded by the FDA or any government health program?
+  answer: ""
+- question: Have you ever been terminated or asked to resign from a job?
+  answer: ""
+- question: Are you willing to undergo a background check and drug screening if offered a position?
+  answer: ""
+- question: Have you previously applied to or interviewed with this company?
+  answer: "No, unless the form shows a prior application; the agent records every application it submits."
+- question: Do you have any competing offers or offer deadlines?
+  answer: ""
+- question: Are you the spouse or partner of someone serving, or who served, in the U.S. military?
+  answer: ""
+- question: Do you have a valid driver's license?
+  answer: ""
+
+# ---- Pay, GPA, communications ----
+- question: Desired salary / compensation expectations
+  answer: "Match the posted pay range; if none is posted, use compensation.default_hourly_usd from the profile."
+- question: GPA (the number itself)
+  answer: "Leave blank. If a form requires the GPA number, stop and ask the user."
+- question: Is your GPA at or above a cutoff (e.g. 2.5, 2.8, 3.0, 3.2, 3.5)?
+  answer: ""   # e.g. "Yes for any cutoff of 3.5 or lower. For a higher cutoff, stop and ask the user."
+- question: Do you consent to receive text messages / communications about your application?
+  answer: "Yes to email; No to marketing texts when optional."

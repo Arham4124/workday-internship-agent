@@ -1,0 +1,81 @@
+# Internship Agent — behaviour settings. Copy to settings.yaml (`./agent.sh init` does it) and edit.
+# Changes apply on the next run.
+
+# review = fill everything and stop at Workday's Review page (nothing is submitted; `./agent.sh approve`)
+# auto   = submit when Claude's final check of the Review page finds no problems
+mode: review            # start in review mode; switch with `./agent.sh mode auto` once you trust it
+
+targeting:
+  seasons: ["Summer 2027"]                # e.g. ["Summer 2027"], ["Fall 2027", "Spring 2028"]
+  role_types:                             # what you want; Claude reads these when ranking postings
+    - Data Science
+    - Machine Learning / AI
+  never_apply:                            # hard no's, in plain words
+    - Full-time or new-grad roles
+    - Roles outside the United States
+  locations: "Anywhere in the United States, or remote within the U.S."
+  min_score: 60                           # Claude's fit score (0-100) needed to apply
+
+  # Industries (`sector:` in companies.yaml) to apply to first, e.g. [pharma] or [tech, finance].
+  # Empty = no preference (best fit first). Sectors: tech, media, aerospace, industrial, finance,
+  # pharma, medtech, health, energy.
+  priority_sectors: []
+  # strict = only priority industries while any of their openings remain; prefer = those first, then others
+  priority_mode: prefer
+
+  # Extra words that disqualify a title (regex fragments, case-insensitive), e.g. ["biostat", "statistic"]
+  exclude_title_words: []
+
+  # Optional: replace the title keyword lists (defaults are tuned for data/AI roles; see agent/discover.py).
+  # For other fields set e.g. title_keywords: ["software", "engineer", "developer"].
+  # title_keywords: []
+  # strong_title_keywords: []
+  # exclude_title_keywords: []
+
+  # Optional: how Claude should score fit (0-100) for you. Leave out to use a generic rubric.
+  # scoring_guidance: |
+  #   90-100: <your dream topics, e.g. "LLM research", "computer vision for robotics">
+  #   70-89:  <good matches>
+  #   50-69:  <borderline>
+  #   below 50: poor fit.
+
+limits:
+  max_applications_per_day: 10            # the main lever for Claude usage (~18 Claude calls per application)
+  max_per_company_per_season: 3           # companies outside priority_sectors
+  max_per_priority_company_per_season: 5  # companies in priority_sectors
+  max_attempts_per_job: 3
+
+schedule:
+  daily_run_time: "10:00"     # one run per day: scan + rank + apply. Missed while asleep -> runs on wake;
+                              # missed while off -> runs at next login. Re-run `./agent.sh install` after changing.
+  keep_awake_during_run: true # stop the Mac from idle-sleeping while a run is in progress
+  launchd_label: com.internship-agent.daily   # name of the macOS background job
+
+claude:
+  triage_model: haiku         # ranking postings (cheap)
+  apply_model: sonnet         # filling forms and the final check
+  timeout_seconds: 300
+  effort:                     # low = faster; the final pre-Submit check gets more care
+    triage: low
+    apply: low
+    cover: medium
+  review_effort: medium
+
+browser:
+  headless: true              # false = watch the browser work
+  slow_mo_ms: 0
+
+accounts:
+  # unique = new Workday accounts get a random password (stored in Keychain; see `./agent.sh login <company>`)
+  # common = new accounts reuse your usual Workday password
+  new_account_password: unique
+
+documents:
+  resume: documents/resume.pdf
+  transcript: documents/transcript.pdf   # optional; uploaded only when a form requires a transcript
+  cover_letter: when_required            # when_required | always | never (written by Claude from your profile)
+
+notifications:
+  macos: true                 # a notification per submitted / held application
+  daily_digest_email: true    # a summary e-mail to yourself after each run (needs the Gmail app password)
+  digest_hour: 8

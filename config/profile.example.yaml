@@ -1,0 +1,116 @@
+# Your applicant profile. Copy to profile.yaml (`./agent.sh init` does it) and fill it in — see QUESTIONNAIRE.md.
+# The agent fills application forms ONLY from this file and answers.yaml, and every application certifies
+# that the information is true, so keep it accurate. profile.yaml is git-ignored and readable only by you.
+# Never put passwords here (see SECRETS.md).
+
+name:
+  first: ""
+  middle: ""                 # leave "" if none
+  last: ""
+  preferred: ""              # leave "" if you go by your legal first name
+  full: ""                   # e.g. "First Last" — used on signature lines
+
+contact:
+  email: ""                  # the Gmail address used for every application (verification e-mails go here)
+  phone: ""                  # digits only, e.g. "5551234567"
+  phone_formatted: ""        # e.g. "(555) 123-4567"
+  phone_type: Mobile         # Mobile | Home | Work
+  phone_country: United States of America (+1)
+
+address:
+  line1: ""
+  line2: ""                  # apartment / unit
+  city: ""
+  state: ""                  # full name, e.g. "California"
+  state_code: ""             # e.g. "CA"
+  postal_code: ""
+  county: ""                 # some forms ask
+  country: United States of America
+
+links:
+  linkedin: ""
+  github: ""
+  website: ""
+  publication: ""            # optional: link to your best paper / preprint
+
+work_authorization:
+  us_citizen: false
+  authorized_to_work_in_us: false
+  requires_sponsorship_now_or_future: false
+  visa_status: ""            # e.g. "F-1 (CPT/OPT eligible)", "Permanent resident", "" if citizen
+  us_person_export_control: false   # true for U.S. citizens / permanent residents (ITAR/EAR questions)
+  security_clearance: none   # none | the clearance level and whether it is active
+
+availability:
+  internship_season: ""      # e.g. "Summer 2027"
+  start_date: ""             # MM/DD/YYYY
+  end_date: ""               # MM/DD/YYYY
+  hours_per_week: 40
+  willing_to_relocate: true
+  open_to_remote_hybrid_onsite: true
+  currently_enrolled: true
+  returning_to_school_after_internship: true
+
+compensation:
+  policy: >-
+    If the job posting states a pay range, answer with that range (use its midpoint when a single number is
+    required). If the posting gives no pay, answer the default hourly rate below. Never answer above the posted range.
+  default_hourly_usd: 0      # e.g. 40
+
+education:                   # one entry per degree, current degree first
+  - school: ""               # official name
+    school_short: ""         # short name for summaries
+    school_alternatives: []  # other TRUE names the school's Workday list might use (joint schools, old names)
+    degree: ""               # e.g. "Doctor of Philosophy (Ph.D.)", "Master of Science (M.S.)", "Bachelor of Science (B.S.)"
+    degree_level: ""         # Doctorate | Masters | Bachelors | Associates
+    field: ""                # your major, as written on your transcript
+    field_alternatives: []   # closest acceptable list options, best first, e.g. [Statistics, Data Science]
+    start: ""                # MM/YYYY
+    end: ""                  # MM/YYYY (expected, if in progress)
+    status: ""               # e.g. "In progress (expected May 2029)" or "Completed"
+    gpa: null                # leave null to keep GPA private (see gpa_policy)
+
+gpa_policy: >-
+  Do not report the GPA number. Leave GPA fields blank when optional; if a form requires the number, stop and ask
+  the user.
+
+experience:                  # most relevant first; forms get the top entries, your resume covers the rest
+  - title: ""
+    company: ""
+    location: ""             # "City, ST" or ""
+    start: ""                # MM/YYYY
+    end: null                # MM/YYYY, or null if current
+    current: false
+    description: >-
+      Two to four factual sentences: what you built or did, tools used, measurable results.
+
+max_experience_entries_on_forms: 4
+
+previous_employers: []       # every organization you have worked for (for "Have you worked for us before?")
+
+publications: []             # e.g. "Lastname F, et al. Title. Venue, Year (status)."
+
+skills:                      # groups are free-form; Claude picks the relevant ones
+  technical: []
+  tools: []
+  other: []
+
+languages:
+  - language: English
+    fluent: true
+
+research_summary: >-
+  One to three sentences describing your focus and strongest work. Claude uses this to rank postings and to
+  write short "why this role" answers.
+
+self_identification:         # voluntary; used only on EEO / self-identification pages.
+  gender: Decline to self-identify          # e.g. Male | Female | Non-binary | Decline to self-identify
+  hispanic_or_latino: Decline to self-identify   # Yes | No | Decline to self-identify
+  race: Decline to self-identify            # e.g. Asian | Black or African American | White | Two or More Races |
+                                            # American Indian or Alaska Native | Native Hawaiian or Pacific Islander
+  veteran_status: Decline to self-identify  # e.g. I am not a protected veteran | I identify as a protected veteran
+  disability: I do not want to answer       # or: No, I do not have a disability and have not had one in the past
+                                            # or: Yes, I have a disability (or previously had a disability)
+  sexual_orientation: Decline to self-identify
+  transgender: Decline to self-identify
+  pronouns: Decline to self-identify

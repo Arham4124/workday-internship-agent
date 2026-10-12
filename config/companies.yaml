@@ -1,0 +1,102 @@
+# Workday career sites to scan. Every company has a `sector:`; list the sectors you want first in
+# settings.yaml -> targeting.priority_sectors. Add any company by pasting its Workday URL
+# (https://<tenant>.wd<N>.myworkdayjobs.com/<Site>, or https://wd<N>.myworkdaysite.com/recruiting/<tenant>/<Site>).
+# Sites that fail are listed on the dashboard and skipped. Add `enabled: false` to skip a company.
+
+# --- Tech / AI ---
+- {name: NVIDIA, url: "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite", sector: tech}
+- {name: Salesforce, url: "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site", sector: tech}
+- {name: Adobe, url: "https://adobe.wd5.myworkdayjobs.com/external_experienced", sector: tech}
+- {name: Intel, url: "https://intel.wd1.myworkdayjobs.com/External", sector: tech}
+- {name: Workday, url: "https://workday.wd5.myworkdayjobs.com/Workday", sector: tech}
+- {name: Autodesk, url: "https://autodesk.wd1.myworkdayjobs.com/Ext", sector: tech}
+- {name: PayPal, url: "https://paypal.wd1.myworkdayjobs.com/jobs", sector: tech}
+- {name: Dell, url: "https://dell.wd1.myworkdayjobs.com/External", sector: tech, enabled: false}  # moved; find its new Workday address
+- {name: HP, url: "https://hp.wd5.myworkdayjobs.com/ExternalCareerSite", sector: tech}
+- {name: Hewlett Packard Enterprise, url: "https://hpe.wd5.myworkdayjobs.com/Jobsathpe", sector: tech}
+- {name: Red Hat, url: "https://redhat.wd5.myworkdayjobs.com/jobs", sector: tech}
+- {name: Snap, url: "https://wd1.myworkdaysite.com/recruiting/snapchat/snap", sector: tech}
+- {name: Micron, url: "https://micron.wd1.myworkdayjobs.com/External", sector: tech}
+- {name: Applied Materials, url: "https://amat.wd1.myworkdayjobs.com/External", sector: tech}
+- {name: Marvell, url: "https://marvell.wd1.myworkdayjobs.com/MarvellCareers2", sector: tech}
+- {name: Analog Devices, url: "https://analogdevices.wd1.myworkdayjobs.com/External", sector: tech}
+- {name: Motorola Solutions, url: "https://motorolasolutions.wd5.myworkdayjobs.com/Careers", sector: tech}
+- {name: Zillow, url: "https://zillow.wd5.myworkdayjobs.com/Zillow_Group_External", sector: tech}
+
+# --- Media ---
+- {name: Disney, url: "https://disney.wd5.myworkdayjobs.com/disneycareer", sector: media}
+- {name: Warner Bros. Discovery, url: "https://warnerbros.wd5.myworkdayjobs.com/global", sector: media}
+
+# --- Aerospace & defense ---
+- {name: Boeing, url: "https://boeing.wd1.myworkdayjobs.com/EXTERNAL_CAREERS", sector: aerospace}
+- {name: Northrop Grumman, url: "https://ngc.wd1.myworkdayjobs.com/Northrop_Grumman_External_Site", sector: aerospace}
+- {name: RTX, url: "https://globalhr.wd5.myworkdayjobs.com/REC_RTX_Ext_Gateway", sector: aerospace}
+
+# --- Industrial & automotive ---
+- {name: 3M, url: "https://3m.wd1.myworkdayjobs.com/Search", sector: industrial}
+- {name: General Motors, url: "https://generalmotors.wd5.myworkdayjobs.com/Careers_GM", sector: industrial}
+
+# --- Finance & insurance ---
+- {name: Capital One, url: "https://capitalone.wd12.myworkdayjobs.com/Capital_One", sector: finance}
+- {name: Mastercard, url: "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers", sector: finance}
+- {name: Bank of America, url: "https://ghr.wd1.myworkdayjobs.com/Lateral-US", sector: finance}
+- {name: Morgan Stanley, url: "https://ms.wd5.myworkdayjobs.com/External", sector: finance}
+- {name: Citi, url: "https://citi.wd5.myworkdayjobs.com/2", sector: finance}
+- {name: BlackRock, url: "https://blackrock.wd1.myworkdayjobs.com/BlackRock_Professional", sector: finance}
+- {name: Fidelity, url: "https://fmr.wd1.myworkdayjobs.com/targeted", sector: finance}
+- {name: Travelers, url: "https://travelers.wd5.myworkdayjobs.com/External", sector: finance}
+
+# --- Pharma / biotech / genomics / life-science tools ---
+- {name: Pfizer, url: "https://pfizer.wd1.myworkdayjobs.com/PfizerCareers", sector: pharma}
+- {name: Merck (MSD), url: "https://msd.wd5.myworkdayjobs.com/SearchJobs", sector: pharma}
+- {name: Johnson & Johnson, url: "https://jj.wd5.myworkdayjobs.com/JJ", sector: pharma}
+- {name: Bristol Myers Squibb, url: "https://bristolmyerssquibb.wd5.myworkdayjobs.com/BMS", sector: pharma}
+- {name: Amgen, url: "https://amgen.wd1.myworkdayjobs.com/Careers", sector: pharma}
+- {name: Gilead, url: "https://gilead.wd1.myworkdayjobs.com/gileadcareers", sector: pharma}
+- {name: Regeneron, url: "https://regeneron.wd1.myworkdayjobs.com/Careers", sector: pharma}
+- {name: Moderna, url: "https://modernatx.wd1.myworkdayjobs.com/M_tx", sector: pharma}
+- {name: Biogen, url: "https://biibhr.wd3.myworkdayjobs.com/external", sector: pharma}
+- {name: Eli Lilly, url: "https://lilly.wd115.myworkdayjobs.com/CMP", sector: pharma}
+- {name: Sanofi, url: "https://sanofi.wd3.myworkdayjobs.com/SanofiCareers", sector: pharma}
+- {name: AstraZeneca, url: "https://astrazeneca.wd3.myworkdayjobs.com/Careers", sector: pharma}
+- {name: GSK, url: "https://gsk.wd5.myworkdayjobs.com/GSKCareers", sector: pharma}
+- {name: Novartis, url: "https://novartis.wd3.myworkdayjobs.com/Novartis_Careers", sector: pharma}
+- {name: Roche / Genentech, url: "https://roche.wd3.myworkdayjobs.com/roche-ext", sector: pharma}
+- {name: Genentech, url: "https://roche.wd3.myworkdayjobs.com/ROG-A2O-GENE", sector: pharma}
+- {name: Vertex, url: "https://vrtx.wd501.myworkdayjobs.com/Vertex_Careers", sector: pharma}
+- {name: Revvity, url: "https://revvity.wd103.myworkdayjobs.com/External", sector: pharma}
+- {name: Viatris, url: "https://viatris.wd5.myworkdayjobs.com/External", sector: pharma}
+- {name: Otsuka, url: "https://vhr-otsuka.wd1.myworkdayjobs.com/External", sector: pharma}
+- {name: Neurocrine Biosciences, url: "https://neurocrine.wd5.myworkdayjobs.com/Neurocrinecareers", sector: pharma}
+- {name: Jazz Pharmaceuticals, url: "https://vhr-jazz.wd1.myworkdayjobs.com/JazzPharmaceuticals", sector: pharma}
+- {name: Takeda, url: "https://takeda.wd502.myworkdayjobs.com/External", sector: pharma}
+- {name: Illumina, url: "https://illumina.wd1.myworkdayjobs.com/illumina-careers", sector: pharma}
+- {name: Thermo Fisher Scientific, url: "https://thermofisher.wd5.myworkdayjobs.com/ThermoFisherCareers", sector: pharma}
+- {name: Danaher, url: "https://danaher.wd1.myworkdayjobs.com/DanaherJobs", sector: pharma}
+- {name: Labcorp, url: "https://labcorp.wd1.myworkdayjobs.com/External", sector: pharma}
+- {name: IQVIA, url: "https://iqvia.wd1.myworkdayjobs.com/IQVIA", sector: pharma}
+- {name: Zoetis, url: "https://zoetis.wd5.myworkdayjobs.com/zoetis", sector: pharma}
+
+# --- Medical devices & diagnostics ---
+- {name: Philips, url: "https://philips.wd3.myworkdayjobs.com/jobs-and-careers", sector: medtech}
+- {name: GE HealthCare, url: "https://gehc.wd5.myworkdayjobs.com/GEHC_ExternalSite", sector: medtech}
+- {name: Medtronic, url: "https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers", sector: medtech}
+- {name: Abbott, url: "https://abbott.wd5.myworkdayjobs.com/abbottcareers", sector: medtech}
+- {name: BD, url: "https://bdx.wd1.myworkdayjobs.com/EXTERNAL_CAREER_SITE_USA", sector: medtech}
+- {name: Stryker, url: "https://stryker.wd1.myworkdayjobs.com/StrykerCareers", sector: medtech}
+- {name: Edwards Lifesciences, url: "https://edwards.wd5.myworkdayjobs.com/EdwardsCareers", sector: medtech}
+- {name: Baxter, url: "https://baxter.wd1.myworkdayjobs.com/baxter", sector: medtech}
+
+# --- Health insurance & services ---
+- {name: CVS Health, url: "https://cvshealth.wd1.myworkdayjobs.com/CVS_Health_Careers", sector: health}
+- {name: Humana, url: "https://humana.wd5.myworkdayjobs.com/Humana_External_Career_Site", sector: health}
+- {name: Elevance Health, url: "https://elevancehealth.wd1.myworkdayjobs.com/ANT", sector: health}
+- {name: Cigna, url: "https://cigna.wd5.myworkdayjobs.com/cignacareers", sector: health}
+- {name: Centene, url: "https://centene.wd5.myworkdayjobs.com/Centene_External", sector: health}
+- {name: McKesson, url: "https://mckesson.wd3.myworkdayjobs.com/External_Careers", sector: health}
+- {name: Cardinal Health, url: "https://cardinalhealth.wd1.myworkdayjobs.com/EXT", sector: health}
+
+# --- Energy ---
+- {name: Shell, url: "https://shell.wd3.myworkdayjobs.com/ShellCareers", sector: energy}
+- {name: Chevron, url: "https://chevron.wd5.myworkdayjobs.com/jobs", sector: energy}
+- {name: Baker Hughes, url: "https://bakerhughes.wd5.myworkdayjobs.com/BakerHughes", sector: energy}
