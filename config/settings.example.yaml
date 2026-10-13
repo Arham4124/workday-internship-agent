@@ -40,10 +40,13 @@ targeting:
   #   below 50: poor fit.
 
 limits:
-  max_applications_per_day: 10            # the main lever for Claude usage (~18 Claude calls per application)
+  # How many applications to SUBMIT per day — your choice: any number, `unlimited`, or 0 (scan + rank only).
+  # Change with `./agent.sh limit N`. Each application uses ~18 Claude calls.
+  max_applications_per_day: 10
   max_per_company_per_season: 3           # companies outside priority_sectors
   max_per_priority_company_per_season: 5  # companies in priority_sectors
   max_attempts_per_job: 3
+  max_attempts_per_run: null             # cap on tries per run (null = twice the daily number)
 
 schedule:
   daily_run_time: "10:00"     # one run per day: scan + rank + apply. Missed while asleep -> runs on wake;

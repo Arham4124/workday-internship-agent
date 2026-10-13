@@ -62,7 +62,8 @@ def render(con) -> None:
     qs = con.execute("SELECT * FROM questions WHERE status='pending' ORDER BY id").fetchall()
     sites_bad = con.execute("SELECT name,last_error FROM sites WHERE ok=0").fetchall()
     parts = [f"<main><h1>Internship Agent</h1><div class='muted'>Updated {datetime.now():%b %d, %I:%M %p} · "
-             f"mode: <b>{e(config.settings()['mode'])}</b> · last scan: {e(str(db.kv_get(con, 'last_discovery', 'never')))}</div>",
+             f"mode: <b>{e(config.settings()['mode'])}</b> · daily limit: <b>{e(str(config.settings()['limits'].get('max_applications_per_day')))}</b>"
+             f" · last scan: {e(str(db.kv_get(con, 'last_discovery', 'never')))}</div>",
              "<div class='tiles'>" + "".join(f"<div class='tile'><b>{v}</b>{k}</div>" for k, v in tiles) + "</div>"]
     if qs:
         parts.append("<h2 class='warn'>Questions only you can answer</h2><p class='muted'>Run <code>./agent.sh answer</code>.</p>")

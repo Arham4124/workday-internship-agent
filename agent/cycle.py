@@ -181,7 +181,15 @@ def selfcheck() -> dict:
     return out
 
 
-def run_cycle(headed=None, force: bool = False) -> None:
+def daily_limit() -> float:
+    """limits.max_applications_per_day: a number, 0 (scan and rank only), or unlimited/null (no daily cap)."""
+    v = config.settings()["limits"].get("max_applications_per_day")
+    if v is None or str(v).strip().lower() in ("", "none", "null", "unlimited", "no limit"):
+        return float("inf")
+    return max(0, int(v))
+
+
+def run_cycle(headed=None, force: bool = False, count: int | None = None) -> None:
     lock = _lock()
     if lock is None:
         log.info("another run is still in progress; skipping")
@@ -214,10 +222,27 @@ def run_cycle(headed=None, force: bool = False) -> None:
         log.info("discovery: %s", discover.run_discovery(con))
         if not claude.cooldown_active(con):
             log.info("triage: %s", triage.run_triage(con, max_jobs=400))
-        budget = s["limits"]["max_applications_per_day"] - applied_today(con)
-        if budget > 0 and not claude.cooldown_active(con):
-            for job in pick_jobs(con, budget):
+        # Keep going until today's quota is actually SUBMITTED: postings you already applied to, held ones and
+        # errors don't use up a slot. A ceiling on attempts keeps Claude usage bounded.
+        # The quota is the user's: limits.max_applications_per_day, or `--count N` for a one-off run.
+        cap = (applied_today(con) + count) if count is not None else daily_limit()
+        remaining = cap - applied_today(con)
+        default_attempts = 200 if remaining == float("inf") else int(2 * max(remaining, 0))
+        max_attempts = s["limits"].get("max_attempts_per_run") or default_attempts
+        attempts, tried = 0, set()
+        while attempts < max_attempts and applied_today(con) < cap and not claude.cooldown_active(con):
+            left = cap - applied_today(con)
+            batch = [j for j in pick_jobs(con, 10_000 if left == float("inf") else int(left)) if j["id"] not in tried]
+            if not batch:
+                break
+            for job in batch:
+                if attempts >= max_attempts or applied_today(con) >= cap:
+                    break
+                tried.add(job["id"])
+                attempts += 1
                 apply_one(con, job, headed=headed)
+        log.info("today: %d submitted/ready (limit %s), %d attempts", applied_today(con),
+                 "unlimited" if cap == float("inf") else int(cap), attempts)
     except claude.UsageLimited as e:
         log.warning("Claude usage limit reached; the rest waits for the next run (limit resets %s)", e.reset_at)
     finally:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import email
+import email.utils
 import imaplib
 import logging
 import re
@@ -87,16 +88,26 @@ def find_link(kind: str, tenant: str, since: datetime, wait_seconds: int = 240) 
 
 
 def send(subject: str, html_body: str) -> None:
+    """Deliver a note to yourself. Placed straight into the Gmail inbox over IMAP (port 993) because many
+    campus and corporate networks block the mail-sending ports; falls back to SMTP if that fails."""
     pw = secrets.gmail_app_password()
     if not pw:
         return
     msg = EmailMessage()
     msg["Subject"], msg["From"], msg["To"] = subject, _address(), _address()
+    msg["Date"] = email.utils.formatdate(localtime=True)
     msg.set_content("Open in an HTML-capable mail client.")
     msg.add_alternative(html_body, subtype="html")
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=CTX) as s:
-        s.login(_address(), pw)
-        s.send_message(msg)
+    try:
+        m = _imap()
+        m.append("INBOX", "", imaplib.Time2Internaldate(time.time()), msg.as_bytes())  # no \\Seen flag = unread
+        m.logout()
+        return
+    except Exception as e:
+        log.warning("inbox delivery failed (%s); trying SMTP", e)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=CTX, timeout=20) as srv:
+        srv.login(_address(), pw)
+        srv.send_message(msg)
 
 
 def test_login() -> str:

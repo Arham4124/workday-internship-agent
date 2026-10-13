@@ -12,6 +12,8 @@ import re
 import time
 from datetime import datetime
 
+from playwright.sync_api import Error as PWError
+
 from . import auth, config, planner, widgets
 from .browser import Browser, ClickRefused, click_button, click_text, extract, robust_click, screenshot, settle
 
@@ -86,22 +88,25 @@ def classify(st: dict) -> str:
 
 def _next_button(page, allow_submit=False, wait_s: float = 10):
     deadline = time.time() + wait_s
-    while True:  # the bottom navigation can render a moment after the fields
-        loc = page.locator('[data-automation-id="bottom-navigation-next-button"]:visible')
-        if not loc.count():
-            for t in NEXT_TEXTS + (("Submit",) if allow_submit else ()):
-                cand = page.get_by_role("button", name=t, exact=True)
-                if cand.count() and cand.first.is_visible():
-                    loc = cand
+    found = None
+    while found is None:  # the bottom navigation can render a moment after the fields
+        cands = [page.locator('[data-automation-id="bottom-navigation-next-button"]')]
+        cands += [page.get_by_role("button", name=t, exact=True) for t in NEXT_TEXTS + (("Submit",) if allow_submit else ())]
+        for loc in cands:
+            for i in range(loc.count()):
+                if loc.nth(i).is_visible():
+                    found = loc.nth(i)
                     break
-        if loc.count() or time.time() > deadline:
+            if found is not None:
+                break
+        if found is not None or time.time() > deadline:
             break
         page.wait_for_timeout(500)
-    if not loc.count():
+    if found is None:
         return None
-    if re.search(r"submit", loc.first.inner_text(), re.I) and not allow_submit:
+    if re.search(r"submit", found.inner_text(), re.I) and not allow_submit:
         raise auth.NeedsHuman("refused to click Submit outside the Review step")
-    return loc.first
+    return found
 
 
 def _find_btn(st, ref):
@@ -211,10 +216,18 @@ def fill_step(page, job, st, state, run, docs):
         return
     btn = _next_button(page)
     if not btn:
+        now = extract(page, wait_s=0)
+        if now["step"] != step or not now["fields"]:
+            return  # the page already moved on (slow Workday transition); the main loop takes it from here
         raise auth.NeedsHuman(f"no Next button on '{step}'")
     robust_click(page, btn)
-    settle(page, 1500)
-    after = extract(page)
+    deadline = time.time() + 30  # some sites take a while to draw the next step
+    after = extract(page, wait_s=0)
+    while time.time() < deadline:
+        settle(page, 300)
+        after = extract(page, wait_s=0)
+        if after["step"] != step or after["errors"]:
+            break
     if after["step"] == step and after["errors"]:
         state["failures"][step] = [f"page errors after Next: {after['errors'][:8]}"]
 
@@ -328,4 +341,11 @@ def apply_job(con, job, mode: str, headed: bool | None = None, fast: bool = Fals
             except (auth.NeedsHuman, ClickRefused) as e:
                 screenshot(page, run.dir / "needs_human.png")
                 return done("needs_human", str(e))
+            except PWError as e:
+                state["hiccups"] = state.get("hiccups", 0) + 1
+                log.warning("[%s] browser hiccup %d: %s", job["tenant"], state["hiccups"], str(e).splitlines()[0][:140])
+                if state["hiccups"] > 6:
+                    screenshot(page, run.dir / "needs_human.png")
+                    return done("needs_human", f"repeated browser errors: {str(e).splitlines()[0][:160]}")
+                settle(page, 1500)
         return done("needs_human", "too many steps without reaching Review")

@@ -129,7 +129,36 @@ def cmd_triage(_):
 
 
 def cmd_cycle(args):
-    cycle.run_cycle(headed=args.headed or None, force=args.force)
+    cycle.run_cycle(headed=args.headed or None, force=args.force or args.count is not None, count=args.count)
+
+
+def cmd_limit(args):
+    """Show or set how many applications the agent sends (per day, per company)."""
+    changes = []
+    if args.per_day is not None:
+        v = args.per_day.strip().lower()
+        if v in ("unlimited", "none", "no-limit", "max"):
+            config.set_setting("max_applications_per_day", "unlimited")
+        elif v.isdigit():
+            config.set_setting("max_applications_per_day", int(v))
+        else:
+            sys.exit("per-day limit must be a number, 0 (scan and rank only), or 'unlimited'")
+        changes.append("per day")
+    if args.per_company is not None:
+        config.set_setting("max_per_company_per_season", args.per_company)
+        changes.append("per company")
+    if args.per_priority_company is not None:
+        config.set_setting("max_per_priority_company_per_season", args.per_priority_company)
+        changes.append("per priority-industry company")
+    lim = config.settings()["limits"]
+    day = cycle.daily_limit()
+    print(f"Applications per day:            {'unlimited' if day == float('inf') else int(day)}"
+          f"{'  (0 = scan and rank only, no applying)' if day == 0 else ''}")
+    print(f"Per company per season:          {lim['max_per_company_per_season']}")
+    print(f"Per priority-industry company:   {lim.get('max_per_priority_company_per_season', lim['max_per_company_per_season'])}")
+    print(f"Submitted or ready today:        {cycle.applied_today(db.connect())}")
+    if changes:
+        print(f"Updated {', '.join(changes)}; takes effect on the next run.")
 
 
 def cmd_apply(args):
@@ -230,6 +259,11 @@ def main(argv=None):
     p = add("cycle", cmd_cycle, "the daily run: scan, rank, apply within limits")
     p.add_argument("--headed", action="store_true", help="show the browser")
     p.add_argument("--force", action="store_true", help="run even if today's run already happened")
+    p.add_argument("--count", type=int, help="apply to this many now (one-off; ignores the daily limit)")
+    p = add("limit", cmd_limit, "show or set how many applications per day / per company")
+    p.add_argument("per_day", nargs="?", help="a number, 0 (scan and rank only), or 'unlimited'")
+    p.add_argument("--per-company", type=int, help="max applications per company per season")
+    p.add_argument("--per-priority-company", type=int, help="same, for companies in your priority industries")
     p = add("apply", cmd_apply, "apply to one job now (id or part of it)")
     p.add_argument("job")
     p.add_argument("--headed", action="store_true")

@@ -131,8 +131,10 @@ Each question allows "Decline to self-identify".
 
 ## L. Volume and behaviour → `settings.yaml`
 
-64. Maximum applications per day (default 10; each uses ~18 Claude calls).
-65. Maximum per company per season (default 3; priority industries 5). Do your own past applications count?
+64. How many applications per day? Any number you like (e.g. 3, 10, 25), `unlimited`, or `0` to only scan and
+    rank without applying. Each application uses ~18 Claude calls, so on a Pro plan keep it modest.
+    You can change it any time with `./agent.sh limit N`.
+65. Maximum per company per season (e.g. 3; priority industries e.g. 5). Do your own past applications count?
     (They do — the agent detects "already applied".)
 66. Review first (`mode: review`) or submit automatically (`mode: auto`)?
 67. Daily run time (default 10:00).

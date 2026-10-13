@@ -44,7 +44,7 @@ Also read: **[QUESTIONNAIRE.md](QUESTIONNAIRE.md)** (everything the agent needs 
 |---|---|---|
 | **Search** | Asks every company in `config/companies.yaml` for internship postings through Workday's public job API. Keeps U.S. internship titles that match your role types. | No |
 | **Rank** | Claude (Haiku) reads each new posting's description and scores 0–100 against your profile, seasons, locations and hard no's. Postings at or above `min_score` are queued. | Yes, cheap |
-| **Pick** | Each day picks up to `max_applications_per_day`: already-approved first, then your priority industries, then best fit. Per-company limits and duplicate-role checks apply. | No |
+| **Pick** | Each day keeps applying until **your chosen number** is submitted (`./agent.sh limit N`): already-approved first, then your priority industries, then best fit. Postings you already applied to, held ones and errors don't use up the count; `max_attempts_per_run` bounds the tries. Per-company limits and duplicate-role checks apply. | No |
 | **Apply** | Opens the posting in a private Chromium, signs in (or creates the Workday account, reads the verification e-mail from Gmail, or resets a forgotten password), then fills each page. Claude (Sonnet) decides each field's value **only** from `profile.yaml` and `answers.yaml`; the code types it and checks it stuck. | Yes, ~18 calls per application |
 | **Check & submit** | On Workday's Review page Claude re-checks everything against your profile. In `review` mode it stops there; in `auto` mode it submits if the check passes. Problems → held for you (or fixed automatically on the next run). | Yes |
 | **Report** | `Dashboard.html`, a macOS notification per result, and a daily e-mail summary. Every value typed is logged in `data/runs/`. | No |
@@ -109,6 +109,7 @@ Repeat for 2–3 companies. Fix anything wrong in your config files.
 ```bash
 ./agent.sh approve all       # submit the reviewed ones on the next run (optional)
 ./agent.sh mode auto         # submit automatically from now on (or keep "review")
+./agent.sh limit 10          # how many applications per day: your choice (any number, unlimited, or 0)
 ./agent.sh install           # run once a day in the background (also runs right away)
 ```
 
@@ -122,8 +123,8 @@ Everything personal lives in three git-ignored files. Edit them any time; change
 
 | I want to change… | Where | Example |
 |---|---|---|
-| **How many applications per day** | `settings.yaml → limits.max_applications_per_day` | `5` (also the main lever for Claude usage) |
-| **Applications per company** | `limits.max_per_company_per_season`, `max_per_priority_company_per_season` | `3`, `5` |
+| **How many applications per day** | `./agent.sh limit N` (or `limits.max_applications_per_day`) | any number, `unlimited`, or `0` = scan and rank only. One-off: `./agent.sh cycle --force --count 3`. Each application uses ~18 Claude calls, so this is also your usage lever. |
+| **Applications per company** | `./agent.sh limit --per-company 3 --per-priority-company 5` | any numbers |
 | **Submit automatically or review first** | `mode` or `./agent.sh mode auto/review` | `review` |
 | **Type of role** | `targeting.role_types`, `never_apply` | `["Software Engineering", "Backend"]` |
 | **Title keywords** (non-data/AI fields) | `targeting.title_keywords`, `strong_title_keywords`, `exclude_title_words` | `title_keywords: ["software", "engineer", "developer"]` |
@@ -149,11 +150,12 @@ up to the site name, e.g. `https://acme.wd5.myworkdayjobs.com/AcmeCareers`. Or s
 | Command | What it does |
 |---|---|
 | `./agent.sh status` | Summary + refresh **Dashboard.html** |
+| `./agent.sh limit [N]` | Show or set applications per day (`unlimited`, or `0` = scan and rank only); `--per-company N` |
 | `./agent.sh answer` | Answer questions the agent paused on (saved for all future forms) |
 | `./agent.sh approve all` | Submit everything waiting at the Review page (on the next run) |
 | `./agent.sh mode auto` / `mode review` | Submit automatically / stop at Review |
 | `./agent.sh pause` / `resume` | Stop / restart everything |
-| `./agent.sh cycle --force --headed` | Run today's batch now, with the browser visible |
+| `./agent.sh cycle --force [--count N] [--headed]` | Run a batch now (optionally exactly N applications), browser visible with `--headed` |
 | `./agent.sh apply <id> [--headed] [--mode review]` | Apply to one posting now |
 | `./agent.sh discover` / `triage` | Scan sites / rank new postings |
 | `./agent.sh login <company>` | Show the Workday login it uses there (only when you type it in Terminal) |
@@ -195,7 +197,7 @@ up to the site name, e.g. `https://acme.wd5.myworkdayjobs.com/AcmeCareers`. Or s
 | Jobs held with "needs your answer" | `./agent.sh answer` |
 | Jobs held with "needs your attention" | see the reason on the dashboard and the screenshot in `data/runs/` |
 | Nothing ran today | `cat ~/Library/Logs/InternshipAgent/launchd.log`; was the Mac asleep/closed? |
-| "Claude usage limit" | lower `max_applications_per_day`; the agent resumes on the next run |
+| "Claude usage limit" | lower the daily number (`./agent.sh limit 5`); the agent resumes on the next run |
 
 ## Files
 

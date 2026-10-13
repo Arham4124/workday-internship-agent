@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 
 from playwright.sync_api import Page
 
@@ -61,6 +62,24 @@ def _page_errors(page) -> str:
     return " ".join(st["errors"]) + " " + st["text"][:600]
 
 
+def _await_login(page, seconds: float = 20):
+    """After pressing Sign In, wait for a clear result: ok (left the sign-in form), verify, bad, or unclear."""
+    deadline = time.time() + seconds
+    text = ""
+    while time.time() < deadline:
+        page.wait_for_timeout(700)
+        if not _pw_boxes(page):
+            return "ok", ""
+        st = extract(page, wait_s=0)
+        errs = " ".join(st["errors"])
+        text = f"{errs} {st['text'][:600]}"
+        if VERIFY.search(text) and not BAD_LOGIN.search(errs):
+            return "verify", text
+        if errs and BAD_LOGIN.search(errs):
+            return "bad", text
+    return "unclear", text
+
+
 def _remember(con, tenant, host, source, pw):
     secrets.set_tenant_password(tenant, pw)
     con.execute("INSERT OR REPLACE INTO accounts(tenant,host,email,password_source,created_at,verified,last_ok)"
@@ -94,10 +113,15 @@ def sign_in(page, job, con, state) -> None:
         _fill(box, email)
     _fill(_pw_boxes(page)[0], pw)
     _submit(page, "signInSubmitButton", "Sign In")
-    text = _page_errors(page)
-    if _pw_boxes(page) and VERIFY.search(text) and not BAD_LOGIN.search(text):
+    outcome, text = _await_login(page)
+    if outcome == "verify":
         return verify_email(page, job, con, state)
-    if _pw_boxes(page):
+    if outcome == "unclear" and not state.get("login_retry"):
+        state["login_retry"] = True  # still on the sign-in page but no error shown: slow site, try once more
+        tries.remove(source)
+        log.info("[%s] sign-in result unclear (slow page); retrying", tenant)
+        return
+    if outcome != "ok":
         log.info("[%s] sign-in with %s password rejected", tenant, source)
         if state.get("unconfirmed_pw") and source == "stored":
             state["account_exists"] = True  # creation was silently refused: an account already existed

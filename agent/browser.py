@@ -76,7 +76,7 @@ def _extract_once(page: Page) -> dict:
     return page.evaluate(DOM_JS)
 
 
-def extract(page: Page, wait_s: float = 20) -> dict:
+def extract(page: Page, wait_s: float = 30) -> dict:
     """Read the page; if an application step is still a loading placeholder, wait for its form."""
     st = _extract_once(page)
     deadline = time.time() + wait_s

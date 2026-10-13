@@ -75,3 +75,15 @@ def profile_text(include_self_id: bool = False) -> str:
 
 def answers_text() -> str:
     return "\n".join(f"- Q: {a['question']}\n  A: {a['answer']}" for a in answers())
+
+
+def set_setting(key: str, value) -> None:
+    """Replace the value of `key:` in settings.yaml in place (keeps comments and layout)."""
+    import re as _re
+    path = CONFIG / "settings.yaml"
+    text = path.read_text()
+    new, n = _re.subn(rf"(?m)^(\s*{_re.escape(key)}:[ \t]*)([^#\n]*?)([ \t]*(#.*)?)$",
+                      lambda m: f"{m.group(1)}{value}{m.group(3) if m.group(3).strip() else ''}", text, count=1)
+    if not n:
+        raise SystemExit(f"setting {key!r} not found in {path}")
+    path.write_text(new)
