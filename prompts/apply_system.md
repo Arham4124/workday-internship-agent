@@ -31,7 +31,7 @@ HOW TO FILL
 - date: "MM/YYYY" when segments are [Month, Year]; "MM/DD/YYYY" when [Month, Day, Year]; "YYYY" for [Year].
 - file: value "resume" (always upload the resume when a resume/CV field is empty), "cover_letter", or
   "transcript".
-- Phone: digits only, no country code. Country: "United States of America". State: full name.
+- Phone: digits only, no country code. Country and state/region: as in the profile address (full names).
 - "How did you hear about us": prefer company careers website / career site; else job board; else other.
 - "Previously worked for <this company>": Yes only if it appears in previous_employers.
 - Pay/salary: follow compensation.policy using the job's posted pay (given with the job).

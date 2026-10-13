@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 
-from . import claude, config, db
+from . import claude, config, db, discover
 
 log = logging.getLogger("agent.triage")
 
@@ -66,10 +66,26 @@ def graduation(p: dict) -> str:
     return str(current.get("end") or "not stated")
 
 
+def job_type_rule(p: dict) -> str:
+    t, grad = discover.job_types(), graduation(p)
+    intern = ("it is an internship/co-op open to a currently enrolled student at the candidate's degree level "
+              "(skip roles limited to other levels). The candidate's expected graduation is " + grad + ": skip "
+              "if the posting requires a graduation date or window that ends before it (e.g. \"graduating "
+              "between Dec 2027 and Jun 2028\" when the candidate graduates later)")
+    full = ("it is a full-time (or new-grad / entry-level) role suited to the candidate's experience, and the "
+            "candidate (graduation: " + grad + ") can start by the role's start date")
+    if discover.wants_internships(t) and discover.wants_full_time(t):
+        return f"EITHER {intern}; OR {full}"
+    if discover.wants_full_time(t):
+        return full + " (skip internships and co-ops)"
+    return intern + " (skip full-time and new-grad roles)"
+
+
 def system_prompt() -> str:
     s, p = config.settings()["targeting"], config.profile()
     return (config.PROMPTS / "triage.md").read_text().format(
-        candidate=candidate_block(p), graduation=graduation(p),
+        candidate=candidate_block(p), job_type_rule=job_type_rule(p),
+        countries=", ".join(discover.countries()) or "any country",
         seasons=", ".join(s.get("seasons") or []), role_types="; ".join(s.get("role_types") or []),
         never_apply="; ".join(s.get("never_apply") or []), locations=s.get("locations", ""),
         scoring_guidance=(s.get("scoring_guidance") or DEFAULT_SCORING).rstrip())

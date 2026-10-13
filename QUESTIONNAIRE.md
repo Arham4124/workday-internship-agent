@@ -119,6 +119,11 @@ Each question allows "Decline to self-identify".
 ## K. What to apply to → `settings.yaml: targeting`, `config/companies.yaml`
 
 57. Role types you want (e.g. Data Science, ML research, Software Engineering, Quant, Product).
+57a. Job types: internships/co-ops, full-time (new grad / entry level), or both?
+57b. Which countries? (e.g. United States; United States and Canada; any)
+57c. If full-time: search terms to look for (e.g. "data scientist", "machine learning engineer").
+57d. Anything you already applied to yourself? List company + title (or the link) so the agent skips it
+     (they go into applications.csv as `applied_manually`).
 58. Roles you never want (e.g. statistics-only roles, sales, undergraduate-only, full-time).
 59. Title words that should disqualify a posting (e.g. "biostat", "marketing").
 60. Industries to prioritise (pharma, tech, finance, medtech, health, energy, aerospace, media, industrial) —

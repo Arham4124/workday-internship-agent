@@ -9,7 +9,7 @@ import subprocess
 import traceback
 from datetime import datetime, timedelta, timezone
 
-from . import apply, claude, config, dashboard, db, discover, mail, notify, secrets, triage
+from . import apply, claude, config, dashboard, db, discover, mail, notify, secrets, tracker, triage
 
 log = logging.getLogger("agent.cycle")
 ACTIVE = ("submitted", "ready_for_review", "approved", "applying", "already_applied")
@@ -34,10 +34,14 @@ def applied_today(con) -> int:
                        (_midnight_utc(),)).fetchone()[0]
 
 
-def _eligible(con, rows, out, per, caps, prio_of, blocked):
-    """Yield rows that pass the transcript block, duplicate-role and per-company checks."""
+def _eligible(con, rows, out, per, caps, prio_of, blocked, applied):
+    """Yield rows that pass the transcript block, applications.csv, duplicate-role and per-company checks."""
     for r in rows:
         if r["company"] in blocked:
+            continue
+        why = tracker.duplicate_of(r, applied)
+        if why:  # already applied to this role (by the agent or by you): never again
+            db.set_job(con, r["id"], status="duplicate", result={"status": "duplicate", "reason": why})
             continue
         key = (r["company"], " ".join((r["title"] or "").lower().split()))
         dup = any((o["company"], " ".join((o["title"] or "").lower().split())) == key for o in out) or con.execute(
@@ -73,18 +77,19 @@ def pick_jobs(con, budget: int) -> list:
         blocked = {r[0] for r in con.execute(
             "SELECT DISTINCT j.company FROM questions q JOIN jobs j ON j.id = q.job_id "
             "WHERE q.status='pending' AND q.question LIKE '%transcript%'")}
+    applied = tracker.load()
     approved = con.execute("SELECT * FROM jobs WHERE status='approved' ORDER BY score DESC").fetchall()
     queued = sorted(con.execute("SELECT * FROM jobs WHERE status='queued'").fetchall(), key=lambda r: -(r["score"] or 0))
     first = [r for r in queued if prio_of(r)] if prio else queued
     rest = [r for r in queued if not prio_of(r)] if prio else []
     out, per = [], {}
     for group in (approved, first):
-        for r in _eligible(con, group, out, per, caps, prio_of, blocked):
+        for r in _eligible(con, group, out, per, caps, prio_of, blocked, applied):
             if len(out) >= budget:
                 return out
             out.append(r)
     if rest and (not strict or not any(prio_of(r) for r in out if r["status"] == "queued")):
-        for r in _eligible(con, rest, out, per, caps, prio_of, blocked):
+        for r in _eligible(con, rest, out, per, caps, prio_of, blocked, applied):
             if len(out) >= budget:
                 break
             out.append(r)
@@ -134,6 +139,9 @@ def apply_one(con, job, mode: str | None = None, headed=None) -> dict:
                         (job["id"], q, res.get("context", ""), db.now()))
     db.set_job(con, job["id"], **fields)
     db.event(con, job["id"], "apply_end", res)
+    if fields["status"] in ("submitted", "ready_for_review", "already_applied"):
+        tracker.record(job, fields["status"], "workday" if status == "already_applied" else "agent",
+                       "" if status == "submitted" else res.get("reason", ""))
     label = f"{job['company']}: {job['title'][:60]}"
     msg = {"submitted": "Application submitted", "ready_for_review": "Ready for your review",
            "needs_answer": "Needs your answer", "needs_human": "Needs your attention"}.get(status)
@@ -208,6 +216,7 @@ def run_cycle(headed=None, force: bool = False, count: int | None = None) -> Non
         return
     db.kv_set(con, "last_run_date", today)
     keep_awake()
+    tracker.sync_from_db(con)
     con.execute("UPDATE jobs SET status='queued' WHERE status='applying' AND updated_at < ?",
                 ((datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(timespec="seconds"),))
     if config.doc_path("transcript"):  # a transcript was added: retry jobs that were waiting for one

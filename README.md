@@ -17,11 +17,12 @@ stopping at the Review page for you or submitting. It runs once a day in the bac
 2. [How it works](#how-it-works)
 3. [Setup, step by step](#setup-step-by-step)
 4. [Customizing the agent](#customizing-the-agent)
-5. [Everyday commands](#everyday-commands)
-6. [Privacy and safety design](#privacy-and-safety-design)
-7. [Limitations](#limitations)
-8. [Troubleshooting](#troubleshooting)
-9. [Files](#files)
+5. [Application tracker](#application-tracker-applicationscsv)
+6. [Everyday commands](#everyday-commands)
+7. [Privacy and safety design](#privacy-and-safety-design)
+8. [Limitations](#limitations)
+9. [Troubleshooting](#troubleshooting)
+10. [Files](#files)
 
 Also read: **[QUESTIONNAIRE.md](QUESTIONNAIRE.md)** (everything the agent needs to know about you) and
 **[SECRETS.md](SECRETS.md)** (Gmail app password and how passwords are kept away from Claude).
@@ -42,9 +43,9 @@ Also read: **[QUESTIONNAIRE.md](QUESTIONNAIRE.md)** (everything the agent needs 
 
 | Stage | What happens | Uses Claude? |
 |---|---|---|
-| **Search** | Asks every company in `config/companies.yaml` for internship postings through Workday's public job API. Keeps U.S. internship titles that match your role types. | No |
+| **Search** | Asks every company in `config/companies.yaml` for postings through Workday's public job API (internships via each site's intern filter; full-time roles via your search terms). Keeps your job types, countries and role-type titles. | No |
 | **Rank** | Claude (Haiku) reads each new posting's description and scores 0–100 against your profile, seasons, locations and hard no's. Postings at or above `min_score` are queued. | Yes, cheap |
-| **Pick** | Each day keeps applying until **your chosen number** is submitted (`./agent.sh limit N`): already-approved first, then your priority industries, then best fit. Postings you already applied to, held ones and errors don't use up the count; `max_attempts_per_run` bounds the tries. Per-company limits and duplicate-role checks apply. | No |
+| **Pick** | Each day keeps applying until **your chosen number** is submitted (`./agent.sh limit N`): already-approved first, then your priority industries, then best fit. Anything already in `applications.csv` is skipped; postings you already applied to, held ones and errors don't use up the count; `max_attempts_per_run` bounds the tries. Per-company limits and duplicate-role checks apply. | No |
 | **Apply** | Opens the posting in a private Chromium, signs in (or creates the Workday account, reads the verification e-mail from Gmail, or resets a forgotten password), then fills each page. Claude (Sonnet) decides each field's value **only** from `profile.yaml` and `answers.yaml`; the code types it and checks it stuck. | Yes, ~18 calls per application |
 | **Check & submit** | On Workday's Review page Claude re-checks everything against your profile. In `review` mode it stops there; in `auto` mode it submits if the check passes. Problems → held for you (or fixed automatically on the next run). | Yes |
 | **Report** | `Dashboard.html`, a macOS notification per result, and a daily e-mail summary. Every value typed is logged in `data/runs/`. | No |
@@ -130,6 +131,8 @@ Everything personal lives in three git-ignored files. Edit them any time; change
 | **Title keywords** (non-data/AI fields) | `targeting.title_keywords`, `strong_title_keywords`, `exclude_title_words` | `title_keywords: ["software", "engineer", "developer"]` |
 | **Industry priority** | `targeting.priority_sectors`, `priority_mode` | `[pharma]` + `strict` = only pharma/biotech while any remain |
 | **Which companies** | `config/companies.yaml` | paste any `…myworkdayjobs.com/<Site>` URL with a `sector:` |
+| **Internships, full-time, or both** | `targeting.job_types` (+ `targeting.search_terms` for full-time) | `[internship]`, `[full_time]`, `[internship, full_time]` |
+| **Countries** | `targeting.countries` | `["United States"]`, `["United States", "Canada"]`, `[any]` |
 | **Season / dates** | `targeting.seasons`; `profile.availability` | `["Fall 2027"]` |
 | **Locations** | `targeting.locations` (plain words) | `"Remote or Boston only"` |
 | **How strict the ranking is** | `targeting.min_score`, `targeting.scoring_guidance` | `70`; your own 0–100 rubric |
@@ -145,6 +148,18 @@ Everything personal lives in three git-ignored files. Edit them any time; change
 up to the site name, e.g. `https://acme.wd5.myworkdayjobs.com/AcmeCareers`. Or search the web for
 `site:myworkdayjobs.com <company>`. Add it to `companies.yaml` with a `sector:`; the next scan checks it.
 
+## Application tracker (`applications.csv`)
+
+Every application is recorded in `applications.csv` (date, company, title, requisition ID, location, status,
+source, link). The agent adds a row when it submits, when it stops at the Review page, when you approve one, and
+when Workday says you already applied. **Before every application it checks this file** and skips any posting
+that matches a row by link, by requisition ID (re-posts like `R1234-1` count as `R1234`), or by the same company
+and job title — so it never applies twice to the same role.
+
+Applied somewhere yourself? Add a row with `status` = `applied_manually` (company + title, or the posting link)
+and the agent will skip it. `./agent.sh tracker` refreshes the file from the agent's database and shows totals.
+Open it in Excel, Numbers or Google Sheets. It contains your application history, so it is git-ignored.
+
 ## Everyday commands
 
 | Command | What it does |
@@ -152,6 +167,7 @@ up to the site name, e.g. `https://acme.wd5.myworkdayjobs.com/AcmeCareers`. Or s
 | `./agent.sh status` | Summary + refresh **Dashboard.html** |
 | `./agent.sh limit [N]` | Show or set applications per day (`unlimited`, or `0` = scan and rank only); `--per-company N` |
 | `./agent.sh answer` | Answer questions the agent paused on (saved for all future forms) |
+| `./agent.sh tracker` | Update and summarise `applications.csv`, your record of every application |
 | `./agent.sh approve all` | Submit everything waiting at the Review page (on the next run) |
 | `./agent.sh mode auto` / `mode review` | Submit automatically / stop at Review |
 | `./agent.sh pause` / `resume` | Stop / restart everything |
@@ -181,7 +197,8 @@ up to the site name, e.g. `https://acme.wd5.myworkdayjobs.com/AcmeCareers`. Or s
 
 - **Workday only.** Companies on Greenhouse, Lever, Ashby, iCIMS, Taleo, SuccessFactors or their own
   systems (most startups, AI labs, and big tech) are not covered.
-- **U.S.-oriented** forms and filters; **Gmail** only (verification e-mails are read over IMAP); **macOS** only.
+- The answer bank and form rules are written with U.S. applications in mind (work-authorization questions etc.);
+  other countries can be targeted with `targeting.countries`. **Gmail** only (read over IMAP); **macOS** only.
 - Runs only while the Mac is on, awake and logged in.
 - Your Claude plan's usage limits apply; when reached, the rest of the day's batch waits for the next run.
 - Workday sometimes changes its pages; when something new appears the job is held, not guessed. Check each
@@ -211,5 +228,6 @@ config/
   answers.example.yaml    -> answers.yaml   (your standard answers, git-ignored)
 documents/        resume.pdf / transcript.pdf (git-ignored)
 data/             database, logs, per-application records, browser profile (created at runtime, git-ignored)
+applications.csv  your application record and duplicate guard (created at runtime, git-ignored)
 agent.sh          command-line entry point
 ```

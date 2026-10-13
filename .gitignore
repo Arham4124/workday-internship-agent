@@ -6,6 +6,8 @@ documents/*
 !documents/README.md
 data/
 Dashboard.html
+applications.csv
+applications.csv.tmp
 *.pdf
 .jobagent_secrets
 # ---- environment ----

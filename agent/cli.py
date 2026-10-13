@@ -7,7 +7,7 @@ import logging
 import re
 import sys
 
-from . import claude, config, cycle, dashboard, db, discover, mail, scheduler, secrets, triage
+from . import claude, config, cycle, dashboard, db, discover, mail, scheduler, secrets, tracker, triage
 
 
 def _logging(verbose: bool) -> None:
@@ -176,8 +176,11 @@ def cmd_approve(args):
     con = db.connect()
     where = "status='ready_for_review'" + ("" if args.job == "all" else " AND id LIKE ?")
     params = () if args.job == "all" else (f"%{args.job}%",)
+    ids = [r[0] for r in con.execute(f"SELECT id FROM jobs WHERE {where}", params)]
     n = con.execute(f"UPDATE jobs SET status='approved' WHERE {where}", params).rowcount
     con.commit()
+    for jid in ids:
+        tracker.record(db.job(con, jid), "approved", "you")
     print(f"{n} application(s) approved; they will be submitted on the next run.")
     dashboard.render(con)
 
@@ -209,6 +212,18 @@ def cmd_status(_):
           f"last run: {db.kv_get(con, 'last_run_date', 'never')}   Claude cooldown: {claude.cooldown_active(con) or 'none'}")
     dashboard.render(con)
     print(f"Dashboard: {config.DASHBOARD}")
+
+
+def cmd_tracker(_):
+    """Bring applications.csv up to date and summarise it."""
+    con = db.connect()
+    added = tracker.sync_from_db(con)
+    rows = tracker.load()
+    from collections import Counter
+    print(f"{tracker.PATH}  ({len(rows)} rows{f', {added} added from history' if added else ''})")
+    for status, n in Counter(r.get("status", "") for r in rows).most_common():
+        print(f"  {status:<18} {n}")
+    print("Add applications you send yourself as rows with status 'applied_manually'; the agent will skip them.")
 
 
 def cmd_answer(_):
@@ -274,6 +289,7 @@ def main(argv=None):
     add("resume", cmd_resume, "resume")
     add("status", cmd_status, "summary + refresh Dashboard.html")
     add("answer", cmd_answer, "answer questions the agent could not")
+    add("tracker", cmd_tracker, "update and summarise applications.csv (your application record)")
     add("login", cmd_login, "show the Workday login the agent made for a company").add_argument("company")
     add("install", lambda a: scheduler.install(), "run once a day in the background")
     add("uninstall", lambda a: scheduler.uninstall(), "stop the background runs")

@@ -62,15 +62,48 @@ def _filters() -> dict:
         "exclude": rx((t.get("exclude_title_keywords") or DEFAULT_EXCLUDE_KEYWORDS) + personal),
         "nontech": rx(DEFAULT_NONTECH_KEYWORDS + personal),
         "priority": set(t.get("priority_sectors") or []),
+        "job_types": job_types(),
+        "countries": countries(),
     }
+
+
+INTERN_TYPES, FULLTIME_TYPES = {"internship", "intern", "co-op", "coop"}, {"full_time", "full-time", "fulltime", "new_grad", "entry_level"}
+US_NAMES = {"united states", "united states of america", "usa", "us", "u.s."}
+
+
+def job_types() -> set:
+    """targeting.job_types: [internship] (default), [full_time], [internship, full_time] or [any]."""
+    v = (config.settings().get("targeting", {}) or {}).get("job_types") or ["internship"]
+    v = {str(x).strip().lower() for x in v}
+    if "any" in v:
+        v |= {"internship", "full_time"}
+    return v
+
+
+def wants_internships(types=None) -> bool:
+    return bool((types or job_types()) & INTERN_TYPES)
+
+
+def wants_full_time(types=None) -> bool:
+    return bool((types or job_types()) & FULLTIME_TYPES)
+
+
+def countries() -> list:
+    """targeting.countries: e.g. ["United States"] (default), ["United States", "Canada"], or [any]."""
+    v = (config.settings().get("targeting", {}) or {}).get("countries")
+    v = ["United States"] if v is None else [str(c).strip() for c in v if str(c).strip()]
+    return [] if not v or any(c.lower() in ("any", "all", "*", "anywhere") for c in v) else v
 
 
 def title_filter(title: str, sector: str = "other") -> str | None:
     """Return None if the title passes, else a reason it was filtered out.
     For priority industries only clearly non-technical roles are dropped here; Claude reads the rest."""
     f = _filters()
-    if not INTERN_TITLE.search(title):
-        return "not an internship title"
+    is_intern = bool(INTERN_TITLE.search(title))
+    if is_intern and not wants_internships(f["job_types"]):
+        return "internship (targeting.job_types excludes internships)"
+    if not is_intern and not wants_full_time(f["job_types"]):
+        return "not an internship title (targeting.job_types is internships only)"
     if sector in f["priority"]:
         return "non-technical role" if f["nontech"].search(title) and not f["strong"].search(title) else None
     if not f["relevant"].search(title):
@@ -91,14 +124,40 @@ def is_us(info: dict) -> bool:
     return bool(hint) or bool(re.search(r"(?i)remote.{0,12}(us|u\.s\.|united states)", locs))
 
 
+def location_ok(info: dict, wanted: list) -> bool:
+    """True if the posting is in one of the wanted countries (always True when wanted is empty = anywhere)."""
+    if not wanted:
+        return True
+    country = (info.get("country") or {}).get("descriptor", "").lower()
+    locs = " | ".join([info.get("location") or ""] + list(info.get("additionalLocations") or [])).lower()
+    for c in (w.lower() for w in wanted):
+        if c in US_NAMES:
+            if is_us(info):
+                return True
+        elif (country and c in country) or c in locs:
+            return True
+    return False
+
+
+DEFAULT_FULLTIME_TERMS = ["data scientist", "machine learning", "artificial intelligence", "research scientist",
+                          "applied scientist"]
+
+
 def fetch_site(company: dict, known: set, facet) -> dict:
     """Network only (safe to run in a thread): list postings and fetch details for new candidates."""
     site = wd.parse_site(company["name"], company["url"])
-    if facet is None:
-        facet = wd.intern_facet(site) or {}
-    is_intern = lambda t: bool(INTERN_TITLE.search(t or ""))
-    postings = wd.search(site, "", facet, cap=400) if facet else []
-    postings += wd.search(site, "intern", None, cap=100 if facet else 300, relevant=is_intern)
+    f = _filters()
+    postings = []
+    if wants_internships(f["job_types"]):
+        if facet is None:
+            facet = wd.intern_facet(site) or {}
+        is_intern = lambda t: bool(INTERN_TITLE.search(t or ""))  # noqa: E731
+        postings += wd.search(site, "", facet, cap=400) if facet else []
+        postings += wd.search(site, "intern", None, cap=100 if facet else 300, relevant=is_intern)
+    if wants_full_time(f["job_types"]):  # no "intern" filter to lean on: search the wanted role terms
+        terms = (config.settings().get("targeting", {}) or {}).get("search_terms") or DEFAULT_FULLTIME_TERMS
+        for term in terms:
+            postings += wd.search(site, term, None, cap=150, relevant=lambda t: bool(f["relevant"].search(t or "")))
     seen, rows = set(), []
     for p in postings:
         path = p.get("externalPath")
@@ -129,8 +188,8 @@ def fetch_site(company: dict, known: set, facet) -> dict:
                         location=info.get("location") or base["location"], pay=json.dumps(pay) if pay else None)
             if not info.get("canApply", True):
                 base.update(status="closed")
-            elif not is_us(info):
-                base.update(status="filtered", triage=json.dumps({"reason": "outside the U.S."}))
+            elif not location_ok(info, f["countries"]):
+                base.update(status="filtered", triage=json.dumps({"reason": "outside targeting.countries"}))
             else:
                 base.update(status="new")
             time.sleep(0.3)
