@@ -5,8 +5,12 @@ import fcntl
 import json
 import logging
 import os
+import re
+import socket
 import subprocess
+import time
 import traceback
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 
 from . import apply, claude, config, dashboard, db, discover, mail, notify, secrets, tracker, triage
@@ -59,7 +63,7 @@ def _eligible(con, rows, out, per, caps, prio_of, blocked, applied):
         yield r
 
 
-def pick_jobs(con, budget: int) -> list:
+def pick_jobs(con, budget: int, exclude: set | None = None) -> list:
     """Today's applications: already-approved ones first, then by industry priority and fit score.
     targeting.priority_sectors lists industries (companies.yaml `sector:`) that come first;
     priority_mode strict = other industries only when no priority opening is left, prefer = fill with them."""
@@ -78,8 +82,20 @@ def pick_jobs(con, budget: int) -> list:
             "SELECT DISTINCT j.company FROM questions q JOIN jobs j ON j.id = q.job_id "
             "WHERE q.status='pending' AND q.question LIKE '%transcript%'")}
     applied = tracker.load()
-    approved = con.execute("SELECT * FROM jobs WHERE status='approved' ORDER BY score DESC").fetchall()
-    queued = sorted(con.execute("SELECT * FROM jobs WHERE status='queued'").fetchall(), key=lambda r: -(r["score"] or 0))
+    exclude = exclude or set()
+    approved = [r for r in con.execute("SELECT * FROM jobs WHERE status='approved' ORDER BY score DESC")
+                if r["id"] not in exclude]
+    queued = []
+    for r in con.execute("SELECT * FROM jobs WHERE status='queued'").fetchall():
+        if r["id"] in exclude:
+            continue
+        if why := discover.title_filter(r["title"], sector.get(r["company"], "other")):  # settings changed since
+            db.set_job(con, r["id"], status="skipped")
+            db.event(con, r["id"], "skip", f"no longer wanted: {why}")
+            log.info("skip (settings changed) %s: %s (%s)", r["company"], r["title"][:60], why)
+            continue
+        queued.append(r)
+    queued.sort(key=lambda r: -(r["score"] or 0))
     first = [r for r in queued if prio_of(r)] if prio else queued
     rest = [r for r in queued if not prio_of(r)] if prio else []
     out, per = [], {}
@@ -108,6 +124,48 @@ def keep_awake() -> None:
         _awake = True
 
 
+OFFLINE_RE = re.compile(r"ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_NETWORK_IO_SUSPENDED|"
+                        r"ERR_ADDRESS_UNREACHABLE|NameResolutionError|nodename nor servname|getaddrinfo|ENOTFOUND|"
+                        r"Network is unreachable|Temporary failure in name resolution", re.I)
+
+
+class Offline(Exception):
+    """The connection dropped (e.g. the Mac went back to sleep): stop, and let the next check resume the run."""
+
+
+def _asleep() -> bool:
+    """Lid closed with nothing keeping the Mac awake. launchd can start jobs during the Mac's brief background
+    wakes while it sleeps; those have no reliable internet and end within a minute, so a run must not start."""
+    try:
+        out = subprocess.run(["ioreg", "-r", "-k", "AppleClamshellState", "-d", "4"],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return '"AppleClamshellState" = Yes' in out and '"AppleClamshellCausesSleep" = No' not in out
+
+
+def _online(wait_s: int = 120) -> bool:
+    """Can we reach Workday? Waits up to wait_s (Wi-Fi takes a moment to reconnect after waking)."""
+    hosts = [urlparse(c["url"]).hostname for c in config.companies()[:2]] + ["www.myworkday.com"]
+    deadline = time.monotonic() + wait_s
+    while True:
+        for h in filter(None, hosts):
+            try:
+                socket.create_connection((h, 443), timeout=5).close()
+                return True
+            except OSError:
+                pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(5)
+
+
+def _due(s) -> bool:
+    hh, mm = (int(x) for x in str(s["schedule"].get("daily_run_time") or "12:00").split(":"))
+    now = datetime.now()
+    return (now.hour, now.minute) >= (hh, mm)
+
+
 def apply_one(con, job, mode: str | None = None, headed=None) -> dict:
     keep_awake()
     s = config.settings()
@@ -125,6 +183,10 @@ def apply_one(con, job, mode: str | None = None, headed=None) -> dict:
     except Exception as e:
         log.error("apply crashed for %s:\n%s", job["id"], traceback.format_exc())
         res = {"status": "failed", "reason": f"{type(e).__name__}: {e}"[:400], "run_dir": ""}
+    if res["status"] == "failed" and OFFLINE_RE.search(res.get("reason") or "") and not _online(wait_s=20):
+        db.set_job(con, job["id"], status=prev, attempts=attempts - 1)  # not this posting's fault: retry it
+        db.event(con, job["id"], "apply_end", {"status": "offline", "reason": res["reason"]})
+        raise Offline(res["reason"])
     status = res["status"]
     fields = {"status": status, "result": res, "run_dir": res.get("run_dir", "")}
     if status in ("submitted", "ready_for_review"):
@@ -151,24 +213,46 @@ def apply_one(con, job, mode: str | None = None, headed=None) -> dict:
     return res
 
 
-def send_digest(con) -> None:
+def send_digest(con, run_started: str | None = None) -> None:
+    """A summary of THIS run (not a rolling 24 hours), plus all-time totals."""
     if not config.settings()["notifications"].get("daily_digest_email"):
         return
     today = datetime.now().strftime("%Y-%m-%d")
     if db.kv_get(con, "last_digest") == today:
         return
-    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
-    rows = con.execute("SELECT * FROM jobs WHERE updated_at >= ? AND status IN "
-                       "('submitted','ready_for_review','needs_answer','needs_human') ORDER BY status", (since,)).fetchall()
-    qs = con.execute("SELECT question FROM questions WHERE status='pending'").fetchall()
+    since = run_started or _midnight_utc()
+    rows = con.execute("SELECT j.*, e.detail FROM events e JOIN jobs j ON j.id = e.job_id "
+                       "WHERE e.kind='apply_end' AND e.ts >= ? ORDER BY e.ts", (since,)).fetchall()
+    groups = {"Submitted": [], "Waiting for your approval": [], "Needs your answer": [], "Needs your attention": [],
+              "Held, will retry automatically": [], "Already applied (by you)": [], "Other": []}
+    for r in rows:
+        res = json.loads(r["detail"] or "{}")
+        st, now_status = res.get("status"), r["status"]
+        key = {"submitted": "Submitted", "ready_for_review": "Waiting for your approval",
+               "needs_answer": "Needs your answer", "already_applied": "Already applied (by you)"}.get(st)
+        if st == "needs_human":
+            key = "Held, will retry automatically" if now_status == "queued" else "Needs your attention"
+        groups[key or "Other"].append((r, res.get("reason", "")))
+    parts = ["<h3>Internship Agent — this run</h3>"]
+    for title, items in groups.items():
+        if items:
+            lis = "".join(f"<li>{r['company']}: <a href='{r['url']}'>{r['title']}</a>"
+                          + (f" <i>({reason[:140]})</i>" if title not in ("Submitted", "Already applied (by you)") else "")
+                          + "</li>" for r, reason in items)
+            parts.append(f"<p><b>{title} ({len(items)})</b></p><ul>{lis}</ul>")
+    if not rows:
+        parts.append("<p>No applications today.</p>")
+    total = con.execute("SELECT COUNT(*) FROM jobs WHERE status='submitted'").fetchone()[0]
     queued = con.execute("SELECT COUNT(*) FROM jobs WHERE status='queued'").fetchone()[0]
-    items = "".join(f"<li><b>{r['status'].replace('_', ' ')}</b> — {r['company']}: "
-                    f"<a href='{r['url']}'>{r['title']}</a></li>" for r in rows)
-    body = (f"<h3>Internship Agent — today's run</h3><ul>{items or '<li>No new activity.</li>'}</ul>"
-            + (f"<p><b>{len(qs)} question(s) need your answer</b> — run <code>./agent.sh answer</code>.</p>" if qs else "")
-            + f"<p>Still queued: {queued}. Full details: Dashboard.html in the InternshipAgent folder.</p>")
+    qs = con.execute("SELECT COUNT(*) FROM questions WHERE status='pending'").fetchone()[0]
+    day = applied_today(con)
+    parts.append(f"<p>Today so far (all runs): <b>{day}</b> · all-time submitted: <b>{total}</b> · still queued: {queued}"
+                 + (f" · <b>{qs} question(s)</b> for you: run <code>./agent.sh answer</code>" if qs else "")
+                 + ". Full record: applications.csv and Dashboard.html.</p>")
     try:
-        mail.send("Internship Agent daily summary", body)
+        run_n = len(groups["Submitted"])
+        mail.send(f"Internship Agent: {run_n} submitted this run ({day} today)" if run_n != day
+                  else f"Internship Agent: {day} submitted today", "".join(parts))
         db.kv_set(con, "last_digest", today)
     except Exception as e:
         log.warning("digest e-mail failed: %s", e)
@@ -203,18 +287,31 @@ def run_cycle(headed=None, force: bool = False, count: int | None = None) -> Non
         log.info("another run is still in progress; skipping")
         return
     hb = config.DATA / "heartbeat.json"
-    check = selfcheck()
-    hb.write_text(json.dumps(check, indent=1))
+    # launchd checks in at login, at schedule.daily_run_time and every 30 minutes. The day's run starts at the
+    # first check after the run time when the Mac is really awake and online; the other checks end right here.
+    hb.write_text(json.dumps(selfcheck() if not hb.exists() else {"time": db.now(), "desktop_files": True}, indent=1))
     con = db.connect()
     s = config.settings()
     today = datetime.now().strftime("%Y-%m-%d")
+    last_run = db.kv_get(con, "last_run_date")
+    if not force and (last_run == today or not _due(s)):
+        return
     if db.kv_get(con, "paused"):
-        log.info("paused (./agent.sh resume to continue)")
+        if force or db.kv_get(con, "paused_noted") != today:
+            db.kv_set(con, "paused_noted", today)
+            log.info("paused (./agent.sh resume to continue)")
         return
-    if not force and db.kv_get(con, "last_run_date") == today:
-        log.info("today's run already happened; nothing to do")
+    if not force and _asleep():
+        log.info("the Mac is asleep (lid closed); today's run starts at the next check after it wakes")
         return
+    if not _online():
+        log.warning("no internet connection; today's run starts at the next check (every 30 min)")
+        return
+    run_started = db.now()
+    check = selfcheck()
+    hb.write_text(json.dumps(check, indent=1))
     db.kv_set(con, "last_run_date", today)
+    offline = False
     keep_awake()
     tracker.sync_from_db(con)
     con.execute("UPDATE jobs SET status='queued' WHERE status='applying' AND updated_at < ?",
@@ -228,7 +325,10 @@ def run_cycle(headed=None, force: bool = False, count: int | None = None) -> Non
                     "WHERE status='pending' AND question LIKE '%transcript%'")
     con.commit()
     try:
-        log.info("discovery: %s", discover.run_discovery(con))
+        found = discover.run_discovery(con)
+        log.info("discovery: %s", found)
+        if found.get("sites_failed") and not found.get("sites_ok") and not _online(wait_s=20):
+            raise Offline("no company site could be reached")
         if not claude.cooldown_active(con):
             log.info("triage: %s", triage.run_triage(con, max_jobs=400))
         # Keep going until today's quota is actually SUBMITTED: postings you already applied to, held ones and
@@ -241,7 +341,7 @@ def run_cycle(headed=None, force: bool = False, count: int | None = None) -> Non
         attempts, tried = 0, set()
         while attempts < max_attempts and applied_today(con) < cap and not claude.cooldown_active(con):
             left = cap - applied_today(con)
-            batch = [j for j in pick_jobs(con, 10_000 if left == float("inf") else int(left)) if j["id"] not in tried]
+            batch = pick_jobs(con, 10_000 if left == float("inf") else int(left), exclude=tried)
             if not batch:
                 break
             for job in batch:
@@ -254,8 +354,13 @@ def run_cycle(headed=None, force: bool = False, count: int | None = None) -> Non
                  "unlimited" if cap == float("inf") else int(cap), attempts)
     except claude.UsageLimited as e:
         log.warning("Claude usage limit reached; the rest waits for the next run (limit resets %s)", e.reset_at)
+    except Offline as e:
+        offline = True
+        db.kv_set(con, "last_run_date", last_run)  # not done: the next check (within 30 min) picks it up again
+        log.warning("lost the internet connection (%s); the run resumes at the next check", str(e)[:120])
     finally:
         dashboard.render(con)
-        send_digest(con)
+        if not offline:
+            send_digest(con, run_started)
         check["finished"] = db.now()
         hb.write_text(json.dumps(check, indent=1))

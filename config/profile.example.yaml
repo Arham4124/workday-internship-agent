@@ -64,7 +64,8 @@ education:                   # one entry per degree, current degree first
     degree: ""               # e.g. "Doctor of Philosophy (Ph.D.)", "Master of Science (M.S.)", "Bachelor of Science (B.S.)"
     degree_level: ""         # Doctorate | Masters | Bachelors | Associates
     field: ""                # your major, as written on your transcript
-    field_alternatives: []   # closest acceptable list options, best first, e.g. [Statistics, Data Science]
+    field_alternatives: []   # closest acceptable list options, best first, e.g. [Statistics, Data Science];
+                             # tried automatically when a form's list lacks the exact field
     start: ""                # MM/YYYY
     end: ""                  # MM/YYYY (expected, if in progress)
     status: ""               # e.g. "In progress (expected May 2029)" or "Completed"

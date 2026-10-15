@@ -57,7 +57,9 @@
     return parts.slice(-2).join(' › ');
   };
 
-  const CTRL = 'input:not([type=hidden]), textarea, button[aria-haspopup="listbox"], [data-automation-id="multiselectInputContainer"]';
+  const BTN_INPUT = 'input[type=submit], input[type=button], input[type=reset], input[type=image]';
+  const CTRL = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image]), ' +
+    'textarea, button[aria-haspopup="listbox"], [data-automation-id="multiselectInputContainer"]';
   const fields = []; const done = new Set(); let n = 0;
   const containers = new Map();
   for (const c of document.querySelectorAll(CTRL)) {
@@ -141,10 +143,11 @@
   }
 
   const buttons = []; let b = 0;
-  for (const el of document.querySelectorAll('button, [role="button"], a[data-automation-id], a[role="link"]')) {
+  for (const el of document.querySelectorAll('button, [role="button"], a[data-automation-id], a[role="link"], ' + BTN_INPUT)) {
     if (!vis(el) || el.getAttribute('aria-haspopup') === 'listbox') continue;
     if (el.closest('[data-automation-id="selectedItem"], [role="listbox"]')) continue;
-    const text = clean(el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
+    const text = clean(el.innerText || (el.tagName === 'INPUT' ? el.value || el.alt : '') ||
+                       el.getAttribute('aria-label') || el.getAttribute('title') || '');
     if (!text || text.length > 80) continue;
     const id = 'b' + (++b);
     el.setAttribute('data-agent-btn', id);

@@ -40,6 +40,21 @@ def _n(s: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9+]", " ", s).split())
 
 
+def _same(a: str, b: str) -> bool:
+    strip = lambda x: _n(x)[4:] if _n(x).startswith("the ") else _n(x)
+    return strip(a) == strip(b)
+
+
+def strict_match(want: str, options: list[str]) -> int | None:
+    """For multi-select lists (skills): the same item, allowing only a parenthetical or a "programming language"
+    suffix ("Python (Programming Language)" for "Python", never "Python Requests")."""
+    for i, o in enumerate(options):
+        base = re.sub(r" (programming language|programming|language)$", "", _n(re.sub(r"\([^)]*\)", " ", o)))
+        if base == _n(want) or _same(o, want):
+            return i
+    return None
+
+
 def best_match(want: str, options: list[str]) -> int | None:
     """Pick the option that clearly corresponds to `want`; None if nothing is a confident match.
     Deliberately strict: a wrong selection on an application is worse than asking again."""
@@ -47,7 +62,7 @@ def best_match(want: str, options: list[str]) -> int | None:
     if not w:
         return None
     w = w[4:] if w.startswith("the ") else w
-    best, best_score = None, 0.0
+    best, best_score, scores = None, 0.0, []
     for i, o in enumerate(options):
         o2 = _n(o)
         o2 = o2[4:] if o2.startswith("the ") else o2
@@ -60,18 +75,22 @@ def best_match(want: str, options: list[str]) -> int | None:
             score = 0.9 if ot[0] == w else 0.0
         elif o2.startswith(w + " ") or w.startswith(o2 + " "):
             score = 0.9
-        elif len(w) >= 8 and w in o2:  # option is a more specific version of what was asked
-            score = 0.8
-        elif all(t in ot for t in wt):
-            score = 0.75
+        elif len(w) >= 8 and w in o2 and "not" not in set(o2.split()) - set(wt):
+            score = 0.8  # option is a more specific version of what was asked (and doesn't add a negation)
         elif len(wt) == 1 and len(ot) == 1 and len(w) >= 6 and w[:6] == o2[:6]:
             score = 0.75  # doctorate / doctoral, bachelors / bachelor
         else:
             score = difflib.SequenceMatcher(None, w, o2).ratio()
             score = score if score >= 0.88 else 0.0  # typos only
+        scores.append((score, _n(o)))
         if score > best_score:
             best, best_score = i, score
-    return best if best_score >= 0.7 else None
+    if best_score < 0.7:
+        return None
+    # Ambiguous: another, different option matches just as well (e.g. two answers that both start with "No").
+    if sum(1 for sc, txt in scores if sc == best_score) > 1 and len({t for sc, t in scores if sc == best_score}) > 1:
+        return None
+    return best
 
 
 def _ctrl(box, sel):
@@ -213,9 +232,11 @@ def _remove_pills(page, box, texts: list[str]) -> None:
                 break
 
 
-def _pick(page, box, part: str, depth: int) -> list[str]:
+def _pick(page, box, part: str, depth: int, probe_other: bool = True, strict: bool = False) -> tuple[list[str], list[str]]:
     """Try to select `part` in the open list: click a matching option, or search for it.
-    Returns the options it saw (so a miss can be reported with the real choices)."""
+    Returns (search results or a category's contents, the list's first page), so that a miss can be
+    reported with the real choices."""
+    match = strict_match if strict else best_match
     inp = _ctrl(box, 'input[data-automation-id="searchBox"], input')
     if depth == 0:
         try:
@@ -225,60 +246,103 @@ def _pick(page, box, part: str, depth: int) -> list[str]:
         page.wait_for_timeout(500)
     before = _pills(box)
     texts = page.evaluate(OPTIONS_JS)
-    seen = list(texts)
-    idx = best_match(part, texts)
+    if depth > 0 and not texts:  # a sub-list (Category > Option) is still loading
+        texts = _poll_options(page, 3.0)
+    default_page = list(texts)
+    found = []
+    idx = match(part, texts)
+    if idx is not None and depth == 0 and not _same(texts[idx], part):
+        # only a partial match on the first page (e.g. "Applied Statistics" for "Statistics"): look for the exact one
+        results = _search(page, inp, part)
+        exact = next((i for i, t in enumerate(results) if _same(t, part)), None)
+        if exact is not None:
+            texts, idx = results, exact
+        elif _pills(box) != before:  # select-on-Enter list picked something: let the caller verify it
+            return results, default_page
+        else:
+            texts = page.evaluate(OPTIONS_JS)
+            idx = match(part, texts)
     if idx is None and depth == 0:
         for q in _queries(part):
             texts = _search(page, inp, q)
-            seen += [t for t in texts if t not in seen]
+            found += [t for t in texts if t not in found]
             if _pills(box) != before:  # this list selects on Enter: let the caller verify it
-                return seen
-            idx = best_match(part, texts)
+                return found, default_page
+            idx = match(part, texts)
             if idx is not None:
                 break
+        if idx is None and probe_other and not any(_n(t).startswith("other") for t in found + default_page):
+            # Nothing like it exists: show whether the list offers "Other" (its alphabetical first page never does)
+            found += [t for t in _search(page, inp, "Other") if t not in found]
     if idx is not None:
         chosen = texts[idx]
         page.locator(f'[data-agent-opt="{idx}"]').first.click()
         page.wait_for_timeout(700)
         after = page.evaluate(OPTIONS_JS)
         if _pills(box) == before and after and after != texts:  # it was a category: report its contents
-            return [f"{chosen} > {t}" for t in after]
-    return seen
+            return [f"{chosen} > {t}" for t in after], []
+    return found, default_page
 
 
-def prompt(page, box, value):
+def _select_one(page, box, v: str, probe_other: bool, strict: bool = False) -> tuple[bool, list[str], list[str], str]:
+    """Select one value ('Category > Option' paths allowed). Returns (selected?, search results, first page, note)."""
+    path = [p.strip() for p in str(v).split(">")] if ">" in str(v) else [str(v)]
+    before = _pills(box)
+    found, default, note = [], [], ""
+    for depth, part in enumerate(path):
+        f, d = _pick(page, box, part, depth, probe_other, strict)
+        if depth:  # options inside a category are reported with their full path
+            d = [f"{' > '.join(path[:depth])} > {t}" for t in d]
+        found, default = (f or found), (d or default)
+        if depth < len(path) - 1 and _pills(box) != before:
+            note = f"'{part}' is an option itself, not a category. "
+            break
+    _close_popups(page)
+    after = _pills(box)
+    new = [p for p in after if p not in before]
+    match = strict_match if strict else best_match
+    good = [p for p in new if match(path[-1], [p]) is not None]
+    bad = [p for p in new if p not in good]
+    if bad:
+        _remove_pills(page, box, bad)  # never leave a value that wasn't asked for
+    return bool(good) or match(path[-1], after) is not None, found, default, note
+
+
+def prompt(page, box, value, fallbacks=()):
     """Searchable Workday list (three kinds: filter-as-you-type, search-on-Enter, select-on-Enter).
-    Success is judged by what actually got selected in the field, never by what the list showed."""
+    Success is judged by what actually got selected in the field, never by what the list showed.
+    A single value may come with fallbacks (other true answers, in order): the first one offered is kept."""
     _close_popups(page)
     pills = _pills(box)
-    if isinstance(value, list):
-        values = [v for v in value if best_match(str(v).split(">")[-1].strip(), pills) is None]
+    single = not isinstance(value, list)  # multi-select lists (e.g. skills) never need an "Other"
+    if not single:
+        groups = [[str(v)] for v in value if strict_match(str(v).split(">")[-1].strip(), pills) is None]
     else:
-        if pills and best_match(str(value).split(">")[-1].strip(), pills) is not None:
+        group = list(dict.fromkeys(str(c) for c in [value, *(fallbacks or [])] if c))
+        if pills and any(best_match(c.split(">")[-1].strip(), pills) is not None for c in group):
             return True, "; ".join(pills)[:120]
         if pills:
             _clear_pills(page, box)
-        values = [value]
-    failed, seen = [], []
-    for v in values:
-        path = [p.strip() for p in str(v).split(">")] if ">" in str(v) else [str(v)]
-        before = _pills(box)
-        for depth, part in enumerate(path):
-            seen = _pick(page, box, part, depth) or seen
-        _close_popups(page)
-        after = _pills(box)
-        new = [p for p in after if p not in before]
-        good = [p for p in new if best_match(path[-1], [p]) is not None]
-        bad = [p for p in new if p not in good]
-        if bad:
-            _remove_pills(page, box, bad)  # never leave a value that wasn't asked for
-        if not good and best_match(path[-1], after) is None:
-            failed.append(str(v))
+        groups = [group]
+    failed, found, default, notes, used = [], [], [], "", ""
+    for group in groups:
+        for i, v in enumerate(group):
+            ok, f, d, n = _select_one(page, box, v, probe_other=single and i == len(group) - 1, strict=not single)
+            found += [t for t in f if t not in found]
+            default, notes = default or d, notes + n
+            if ok:
+                used = f" (fallback for {group[0]!r})" if i else ""
+                break
+        else:
+            failed += group
     pills = _pills(box)
     if failed:
-        return False, (f"no option like {failed}. Options seen in this list: {seen[:40]}. "
-                       f"Pick one of those (nested lists: 'Category > Option'). Selected now: {pills}")
-    return True, "; ".join(pills)[:120]
+        seen = found + [t for t in default if t not in found]
+        return False, (f"no option like {failed}. {notes}Options seen in this list (search results first): "
+                       f"{seen[:50]}. Pick one of those (nested lists: 'Category > Option'). If none fits: the "
+                       f"closest related option ('Other' only if nothing related), or leave the field empty if it "
+                       f"is optional. Selected now: {pills}")
+    return True, "; ".join(pills)[:120] + used
 
 
 def read_options(page, field: dict, cap: int = 60) -> list[str]:
@@ -395,19 +459,26 @@ def upload(page, box, path: Path):
     return False, "upload did not finish"
 
 
-def apply_value(page: Page, field: dict, value, docs: dict) -> tuple[bool, str]:
+def apply_value(page: Page, field: dict, value, docs: dict, fallbacks=()) -> tuple[bool, str]:
     group = page.locator(f'[data-agent-id="{field["id"]}"]')
     box = group.first
     if not box.count():
         return False, "field no longer on page"
     t = field["type"]
     try:
+        if t in ("dropdown", "radio") and isinstance(value, str) and fallbacks:
+            cands = list(dict.fromkeys([value, *map(str, fallbacks)]))
+            for i, v in enumerate(cands):
+                ok, note = dropdown(page, box, v) if t == "dropdown" else radio(page, box, v, group)
+                if ok:
+                    return True, note + (f" (fallback for {value!r})" if i else "")
+            return False, f"none of {cands} is offered. {note}"
         if t in ("text", "textarea"):
             return text(page, box, value)
         if t == "dropdown":
             return dropdown(page, box, value)
         if t == "prompt":
-            return prompt(page, box, value)
+            return prompt(page, box, value, fallbacks if isinstance(value, str) else ())
         if t == "radio":
             return radio(page, box, value, group)
         if t == "checkbox":

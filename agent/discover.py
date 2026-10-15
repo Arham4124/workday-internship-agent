@@ -15,6 +15,9 @@ log = logging.getLogger("agent.discover")
 INTERN_TITLE = re.compile(
     r"\b(intern|interns|internship|co-?op|summer (associate|analyst|student|scholar|fellow)|"
     r"student researcher|phd (resident|residency))\b", re.I)
+# A co-op with no internship option ("Grad Co-op", "... – Co-op"); "Intern/Co-op" titles also offer an internship.
+COOP_TITLE = re.compile(r"\bco-?op\b|\bco op\b|cooperative education", re.I)
+INTERN_WORD = re.compile(r"\bintern(s|ship|ships)?\b", re.I)
 US_HINT = re.compile(
     r"united states|\bUSA?\b|\bremote\b|, ?(AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|"
     r"MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b|"
@@ -67,21 +70,34 @@ def _filters() -> dict:
     }
 
 
-INTERN_TYPES, FULLTIME_TYPES = {"internship", "intern", "co-op", "coop"}, {"full_time", "full-time", "fulltime", "new_grad", "entry_level"}
+INTERN_TYPES, COOP_TYPES = {"internship", "intern"}, {"co-op", "coop", "co_op"}
+FULLTIME_TYPES = {"full_time", "full-time", "fulltime", "new_grad", "entry_level"}
 US_NAMES = {"united states", "united states of america", "usa", "us", "u.s."}
 
 
 def job_types() -> set:
-    """targeting.job_types: [internship] (default), [full_time], [internship, full_time] or [any]."""
+    """targeting.job_types: [internship] (default), [co-op], [full_time], any combination, or [any]."""
     v = (config.settings().get("targeting", {}) or {}).get("job_types") or ["internship"]
     v = {str(x).strip().lower() for x in v}
     if "any" in v:
-        v |= {"internship", "full_time"}
+        v |= {"internship", "co-op", "full_time"}
     return v
 
 
 def wants_internships(types=None) -> bool:
     return bool((types or job_types()) & INTERN_TYPES)
+
+
+def wants_coops(types=None) -> bool:
+    return bool((types or job_types()) & COOP_TYPES)
+
+
+def student_kind(title: str) -> set:
+    """{"internship"}, {"co-op"} or both for a student-role title (empty set: not a student role)."""
+    if not INTERN_TITLE.search(title or ""):
+        return set()
+    coop = bool(COOP_TITLE.search(title))
+    return ({"co-op"} if coop else set()) | ({"internship"} if INTERN_WORD.search(title) or not coop else set())
 
 
 def wants_full_time(types=None) -> bool:
@@ -99,11 +115,12 @@ def title_filter(title: str, sector: str = "other") -> str | None:
     """Return None if the title passes, else a reason it was filtered out.
     For priority industries only clearly non-technical roles are dropped here; Claude reads the rest."""
     f = _filters()
-    is_intern = bool(INTERN_TITLE.search(title))
-    if is_intern and not wants_internships(f["job_types"]):
-        return "internship (targeting.job_types excludes internships)"
-    if not is_intern and not wants_full_time(f["job_types"]):
-        return "not an internship title (targeting.job_types is internships only)"
+    kind = student_kind(title)
+    if kind and not (("internship" in kind and wants_internships(f["job_types"]))
+                     or ("co-op" in kind and wants_coops(f["job_types"]))):
+        return f"{' / '.join(sorted(kind))} (not in targeting.job_types)"
+    if not kind and not wants_full_time(f["job_types"]):
+        return "not an internship title (targeting.job_types has no full-time roles)"
     if sector in f["priority"]:
         return "non-technical role" if f["nontech"].search(title) and not f["strong"].search(title) else None
     if not f["relevant"].search(title):
@@ -148,7 +165,7 @@ def fetch_site(company: dict, known: set, facet) -> dict:
     site = wd.parse_site(company["name"], company["url"])
     f = _filters()
     postings = []
-    if wants_internships(f["job_types"]):
+    if wants_internships(f["job_types"]) or wants_coops(f["job_types"]):
         if facet is None:
             facet = wd.intern_facet(site) or {}
         is_intern = lambda t: bool(INTERN_TITLE.search(t or ""))  # noqa: E731

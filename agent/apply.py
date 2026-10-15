@@ -14,7 +14,7 @@ from datetime import datetime
 
 from playwright.sync_api import Error as PWError
 
-from . import auth, config, planner, widgets
+from . import auth, config, mail, planner, widgets
 from .browser import Browser, ClickRefused, click_button, click_text, extract, robust_click, screenshot, settle
 
 log = logging.getLogger("agent.apply")
@@ -145,18 +145,24 @@ def fill_step(page, job, st, state, run, docs):
     if rounds > 8:
         raise auth.NeedsHuman(f"stuck on '{step}': {st['errors'][:3] or state['failures'].get(step)}")
     empties = [f for f in st["fields"] if f["required"] and f["value"] in ("", None, False) and f["type"] != "readonly"]
+    tried = state.setdefault("tried", {}).setdefault(step, {})  # field id -> values that failed on this step
     if state.get("fast") and not empties and not st["errors"] and rounds == 1:
         plan = {"fill": [], "proceed": True, "note": "already complete (approved re-run)"}
     else:
         # Options are not pre-read in general (~1 s per field): Claude answers from the question text and
         # any miss comes back with the real options. Exception: "How did you hear about us" lists, whose
         # categories differ at every company, are read up front.
+        eeo = planner.EEO.search(" ".join(f["label"] for f in st["fields"]) + " " + (st.get("step") or ""))
         for f in st["fields"]:
-            if f["type"] == "prompt" and not f["value"] and re.search(r"hear about|source", f["label"], re.I):
-                if opts := widgets.read_options(page, f):
+            hear = f["type"] == "prompt" and re.search(r"hear about|source", f["label"], re.I)
+            if (hear or (eeo and f["type"] == "dropdown")) and not f["value"]:
+                if opts := widgets.read_options(page, f):  # self-ID wording varies by company: show the real choices
                     f["options"] = opts
         notes = [f"A previous attempt's final check flagged: {n} -> fix this if it is on this page" for n in state["notes"]]
-        plan = planner.plan_page(job, st, state["failures"].get(step, []) + notes)
+        cur = {f["id"]: f for f in st["fields"]}
+        history = [f"{fid} ({t['label']}): already tried and NOT accepted: {t['values']}. Do not try these again"
+                   for fid, t in tried.items() if fid in cur and cur[fid]["value"] in ("", None, False)]
+        plan = planner.plan_page(job, st, state["failures"].get(step, []) + history + notes)
     run.save("plan_" + re.sub(r"[^a-z]+", "_", step.lower()), {"state": st, "plan": plan})
     if nh := plan.get("needs_human"):
         qs = [q for q in (nh.get("questions") or []) + [nh.get("question")] if q]
@@ -165,7 +171,7 @@ def fill_step(page, job, st, state, run, docs):
     for e in plan.get("essays") or []:
         run.action(step=step, kind="essay", question=e.get("question"), answer=e.get("answer"))
     by_id = {f["id"]: f for f in st["fields"]}
-    failures = []
+    failures, blocking = [], []
     for item in plan.get("fill") or []:
         f = by_id.get(item.get("id"))
         value = item.get("values") or item.get("value")
@@ -174,11 +180,16 @@ def fill_step(page, job, st, state, run, docs):
         if f["type"] == "file" and value == "cover_letter" and "cover_letter" not in docs:
             from .cover_letter import make
             docs["cover_letter"] = make(job, run.dir)
-        ok, note = widgets.apply_value(page, f, value, docs)
+        fallbacks = [str(v) for v in item.get("fallbacks") or [] if v] if isinstance(value, str) else []
+        ok, note = widgets.apply_value(page, f, value, docs, fallbacks)
         shown = value if f["type"] != "textarea" else str(value)[:300]
         run.action(step=step, label=f["label"][:120], type=f["type"], value=shown, ok=ok, note=note)
         if not ok:
             failures.append(f"{f['id']} ({f['label'][:60]}): {note}")
+            t = tried.setdefault(f["id"], {"label": f["label"][:60], "values": []})
+            t["values"] = list(dict.fromkeys(t["values"] + [str(c)[:80] for c in [value, *fallbacks]]))[-10:]
+            if f.get("required"):
+                blocking.append(f["id"])
     for bid in plan.get("remove") or []:
         if any(b["id"] == bid for b in st["buttons"]):
             click_button(page, bid)
@@ -212,7 +223,7 @@ def fill_step(page, job, st, state, run, docs):
             page.reload()
             settle(page, 2500)
         return
-    if failures or not plan.get("proceed"):
+    if blocking or not plan.get("proceed"):  # misses on OPTIONAL fields don't hold up the page
         return
     btn = _next_button(page)
     if not btn:
@@ -251,11 +262,20 @@ def review_and_submit(page, job, mode, run):
         robust_click(page, btn, allow_submit=True)  # the one place a Submit button may be pressed
     elif not click_text(page, "Submit", exact=True, allow_submit=True):
         return "needs_human", "could not find the Submit button", []
-    settle(page, 4000)
+    clicked = mail.utcnow()
+    deadline = time.time() + 45  # Workday can take a while: the Submit button greys out while it processes
+    after = extract(page, wait_s=0)
+    while time.time() < deadline:
+        settle(page, 500)
+        after = extract(page, wait_s=0)
+        if SUBMITTED.search(after["text"]) or (not after["step"] and not after["errors"]):
+            screenshot(page, run.dir / "after_submit.png")
+            return "submitted", "Submitted.", []
+        if after["errors"]:
+            break
     screenshot(page, run.dir / "after_submit.png")
-    after = extract(page)
-    if SUBMITTED.search(after["text"]) or (not after["step"] and not after["errors"]):
-        return "submitted", "Submitted.", []
+    if not after["errors"] and mail.find_confirmation(job["tenant"], clicked):
+        return "submitted", "Submitted (confirmed by the company's e-mail).", []
     return "needs_human", "Clicked Submit but saw no confirmation; check the company's candidate home page.", []
 
 
@@ -347,5 +367,8 @@ def apply_job(con, job, mode: str, headed: bool | None = None, fast: bool = Fals
                 if state["hiccups"] > 6:
                     screenshot(page, run.dir / "needs_human.png")
                     return done("needs_human", f"repeated browser errors: {str(e).splitlines()[0][:160]}")
+                if page.is_closed():  # a pop-up (e.g. a tax-credit survey) closed itself: back to the main tab
+                    state["hiccups"] -= 1
+                    continue
                 settle(page, 1500)
         return done("needs_human", "too many steps without reaching Review")

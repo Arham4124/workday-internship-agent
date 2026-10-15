@@ -47,6 +47,8 @@ STABLE_JS = """() => {
 
 def settle(page: Page, ms: int = 300) -> None:
     """Wait until the page stops changing (two identical readings 0.3 s apart), max ~8 s."""
+    if page.is_closed():  # e.g. a survey pop-up that closed itself after "Opt Out"
+        return
     try:
         page.wait_for_load_state("domcontentloaded", timeout=15000)
     except PWError:
@@ -100,7 +102,8 @@ class ClickRefused(Exception):
 
 
 def _label(h) -> str:
-    return " ".join((h.evaluate("el => el.innerText || el.getAttribute('aria-label') || ''") or "").split())
+    return " ".join((h.evaluate("el => el.innerText || (el.tagName === 'INPUT' ? el.value : '') || "
+                                "el.getAttribute('aria-label') || ''") or "").split())
 
 
 def robust_click(page: Page, loc, allow_submit: bool = False) -> None:

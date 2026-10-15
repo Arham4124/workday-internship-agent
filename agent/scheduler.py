@@ -34,7 +34,10 @@ def install() -> None:
             "PATH": f"{Path.home()}/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
             "HOME": str(Path.home()), "PYTHONUNBUFFERED": "1"},
         "StartCalendarInterval": {"Hour": hh, "Minute": mm},
-        "RunAtLoad": True,  # also catches up at login if the laptop was off at run time
+        # Also check at login and every 30 min: if the Mac was asleep, closed or offline at the run time, the
+        # day's run starts at the first check when it is awake and online (it still runs only once a day).
+        "StartInterval": 1800,
+        "RunAtLoad": True,
         "StandardOutPath": str(LOG_DIR / "launchd.log"),
         "StandardErrorPath": str(LOG_DIR / "launchd.log"),
         "Nice": 5,
@@ -44,12 +47,14 @@ def install() -> None:
     domain = f"gui/{os.getuid()}"
     subprocess.run(["launchctl", "bootout", f"{domain}/{LABEL}"], capture_output=True)
     hb = config.DATA / "heartbeat.json"
-    before = hb.stat().st_mtime if hb.exists() else 0
+    hb.unlink(missing_ok=True)  # the first check after installing writes a full background check here
+    before = 0
     r = subprocess.run(["launchctl", "bootstrap", domain, str(PLIST)], capture_output=True, text=True)
     if r.returncode != 0:
         print("launchctl bootstrap failed:", r.stderr.strip())
         return
-    print(f"Installed: runs daily at {hh:02d}:{mm:02d} (and at login if a day was missed).")
+    print(f"Installed: runs once a day at {hh:02d}:{mm:02d}, or at the first check after that (every 30 min)"
+          " when the Mac is awake and online.")
     for _ in range(45):  # RunAtLoad starts it now; confirm it can reach the Desktop folder
         time.sleep(2)
         if hb.exists() and hb.stat().st_mtime > before:

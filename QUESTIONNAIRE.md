@@ -119,7 +119,7 @@ Each question allows "Decline to self-identify".
 ## K. What to apply to → `settings.yaml: targeting`, `config/companies.yaml`
 
 57. Role types you want (e.g. Data Science, ML research, Software Engineering, Quant, Product).
-57a. Job types: internships/co-ops, full-time (new grad / entry level), or both?
+57a. Job types: internships, co-ops, full-time (new grad / entry level), or a mix? (Co-ops are skipped unless you ask for them.)
 57b. Which countries? (e.g. United States; United States and Canada; any)
 57c. If full-time: search terms to look for (e.g. "data scientist", "machine learning engineer").
 57d. Anything you already applied to yourself? List company + title (or the link) so the agent skips it

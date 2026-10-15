@@ -14,7 +14,8 @@ PAGE_SCHEMA = {
     "properties": {
         "fill": {"type": "array", "items": {"type": "object", "properties": {
             "id": {"type": "string"}, "value": {"type": "string"},
-            "values": {"type": "array", "items": {"type": "string"}}}, "required": ["id"]}},
+            "values": {"type": "array", "items": {"type": "string"}},
+            "fallbacks": {"type": "array", "items": {"type": "string"}}}, "required": ["id"]}},
         "add": {"type": "array", "items": {"type": "object", "properties": {
             "button": {"type": "string"}, "times": {"type": "integer"}}, "required": ["button", "times"]}},
         "remove": {"type": "array", "items": {"type": "string"}},
@@ -87,7 +88,9 @@ def review(job, review_text: str) -> dict:
     prompt = (job_block(job) + "\n\nThis is Workday's final Review page for the application, just before"
               " Submit. Check it against the profile and answer bank. Report only real problems: wrong or"
               " missing required information, invented facts, wrong self-identification, wrong dates,"
-              " wrong work authorization or sponsorship answers. Formatting differences are fine.\n\n"
+              " wrong work authorization or sponsorship answers. Formatting differences are fine, and so are the"
+              " approximations the rules allow when a list lacks the exact answer (a school_alternatives or"
+              " field_alternatives value, or the closest related Field of Study).\n\n"
               "REVIEW PAGE TEXT:\n" + review_text[:12000])
     cfg = config.settings()["claude"]
     return claude.ask(prompt, system=_system(True), schema=REVIEW_SCHEMA, model=cfg["apply_model"],

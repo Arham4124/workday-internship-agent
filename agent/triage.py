@@ -68,17 +68,21 @@ def graduation(p: dict) -> str:
 
 def job_type_rule(p: dict) -> str:
     t, grad = discover.job_types(), graduation(p)
-    intern = ("it is an internship/co-op open to a currently enrolled student at the candidate's degree level "
-              "(skip roles limited to other levels). The candidate's expected graduation is " + grad + ": skip "
-              "if the posting requires a graduation date or window that ends before it (e.g. \"graduating "
-              "between Dec 2027 and Jun 2028\" when the candidate graduates later)")
+    kinds = [k for k, on in (("internship", discover.wants_internships(t)), ("co-op", discover.wants_coops(t))) if on]
+    student = ("it is a student " + " or ".join(kinds or ["internship"]) + " open to a currently enrolled student at "
+               "the candidate's degree level (skip roles limited to other levels). The candidate's expected graduation "
+               "is " + grad + ": skip if the posting requires a graduation date or window that ends before it (e.g. "
+               "\"graduating between Dec 2027 and Jun 2028\" when the candidate graduates later)")
+    if not discover.wants_coops(t):
+        student += ("; skip co-ops: postings offered only as a co-op, or as a co-op term longer than a summer "
+                    "internship (an \"Intern/Co-op\" posting that can be a summer internship is fine)")
     full = ("it is a full-time (or new-grad / entry-level) role suited to the candidate's experience, and the "
             "candidate (graduation: " + grad + ") can start by the role's start date")
-    if discover.wants_internships(t) and discover.wants_full_time(t):
-        return f"EITHER {intern}; OR {full}"
+    if kinds and discover.wants_full_time(t):
+        return f"EITHER {student}; OR {full}"
     if discover.wants_full_time(t):
         return full + " (skip internships and co-ops)"
-    return intern + " (skip full-time and new-grad roles)"
+    return student + " (skip full-time and new-grad roles)"
 
 
 def system_prompt() -> str:

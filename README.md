@@ -114,9 +114,12 @@ Repeat for 2–3 companies. Fix anything wrong in your config files.
 ./agent.sh install           # run once a day in the background (also runs right away)
 ```
 
-The daily run happens at `schedule.daily_run_time`; if the Mac was asleep it runs on wake, and if it was off
-it runs at the next login. It never runs more than once a day. It needs you logged in, and closing the lid
-pauses it. `./agent.sh uninstall` removes it.
+The daily run happens at `schedule.daily_run_time`. The background job also checks in at login and every
+30 minutes, so if the Mac was asleep, closed or offline at that time, the run starts at the first check
+when it is awake and online. A run never starts during the Mac's brief background wakes (lid closed), and
+if the connection drops mid-run the posting goes back in the queue and the run resumes at the next check.
+It never applies more than once a day. It needs you logged in, and closing the lid pauses it.
+`./agent.sh uninstall` removes it.
 
 ## Customizing the agent
 
@@ -131,7 +134,7 @@ Everything personal lives in three git-ignored files. Edit them any time; change
 | **Title keywords** (non-data/AI fields) | `targeting.title_keywords`, `strong_title_keywords`, `exclude_title_words` | `title_keywords: ["software", "engineer", "developer"]` |
 | **Industry priority** | `targeting.priority_sectors`, `priority_mode` | `[pharma]` + `strict` = only pharma/biotech while any remain |
 | **Which companies** | `config/companies.yaml` | paste any `…myworkdayjobs.com/<Site>` URL with a `sector:` |
-| **Internships, full-time, or both** | `targeting.job_types` (+ `targeting.search_terms` for full-time) | `[internship]`, `[full_time]`, `[internship, full_time]` |
+| **Internships, co-ops, full-time** | `targeting.job_types` (+ `targeting.search_terms` for full-time) | `[internship]` (no co-ops), `[internship, co-op]`, `[full_time]`, `[any]` |
 | **Countries** | `targeting.countries` | `["United States"]`, `["United States", "Canada"]`, `[any]` |
 | **Season / dates** | `targeting.seasons`; `profile.availability` | `["Fall 2027"]` |
 | **Locations** | `targeting.locations` (plain words) | `"Remote or Boston only"` |
@@ -213,7 +216,7 @@ Open it in Excel, Numbers or Google Sheets. It contains your application history
 | A company never loads ("422") | its Workday address moved — search `site:myworkdayjobs.com <company>` and update the URL |
 | Jobs held with "needs your answer" | `./agent.sh answer` |
 | Jobs held with "needs your attention" | see the reason on the dashboard and the screenshot in `data/runs/` |
-| Nothing ran today | `cat ~/Library/Logs/InternshipAgent/launchd.log`; was the Mac asleep/closed? |
+| Nothing ran today | `grep -i "next check\|asleep\|internet" data/logs/agent.log`; the run starts at the first 30-min check when the Mac is open and online |
 | "Claude usage limit" | lower the daily number (`./agent.sh limit 5`); the agent resumes on the next run |
 
 ## Files

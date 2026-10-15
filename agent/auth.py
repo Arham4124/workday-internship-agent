@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import timedelta
 import time
 
 from playwright.sync_api import Page
@@ -139,6 +140,12 @@ def create_account(page, job, con, state) -> None:
             settle(page)
             return
     if state.get("created"):
+        link = _first(page, '[data-automation-id="signInLink"]')
+        if link and secrets.tenant_password(tenant) and not state.get("signin_after_create"):
+            state["signin_after_create"] = True  # Workday shows "Create Account" again after verification: sign in
+            robust_click(page, link)
+            settle(page)
+            return
         raise NeedsHuman("account creation did not complete")
     mode = config.settings()["accounts"]["new_account_password"]
     pw = secrets.common_workday_password() if mode == "common" and secrets.common_workday_password() else secrets.new_password()
@@ -179,7 +186,11 @@ def create_account(page, job, con, state) -> None:
 def verify_email(page, job, con, state, since=None) -> None:
     if state.get("verified_once"):
         raise NeedsHuman("Workday still asks for e-mail verification")
-    link = mail.find_link("verify", job["tenant"], since or mail.utcnow())
+    link = mail.find_link("verify", job["tenant"], since or mail.utcnow(), wait_seconds=90)
+    if not link and not since:
+        # The e-mail may have come when the account was created on an earlier day (no one clicked it): reuse it
+        link = mail.find_link("verify", job["tenant"], mail.utcnow() - timedelta(days=60), wait_seconds=1,
+                              tenant_only=True)
     if not link:
         raise NeedsHuman("verification e-mail did not arrive (check Gmail, then re-run)")
     state["verified_once"] = True

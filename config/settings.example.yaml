@@ -15,7 +15,8 @@ targeting:
     - Roles outside the United States
   locations: "Anywhere in the United States, or remote within the U.S."
   min_score: 60                           # Claude's fit score (0-100) needed to apply
-  # Job types: [internship] (internships and co-ops), [full_time] (full-time / new-grad), or both / [any].
+  # Job types: [internship] (internships only), [co-op], [full_time] (full-time / new-grad), any mix, or [any].
+  # Co-ops are excluded unless listed; "Intern/Co-op" postings count as internships.
   job_types: [internship]
   # Countries to keep, e.g. ["United States"], ["United States", "Canada"], or [any].
   countries: ["United States"]
@@ -55,8 +56,9 @@ limits:
   max_attempts_per_run: null             # cap on tries per run (null = twice the daily number)
 
 schedule:
-  daily_run_time: "10:00"     # one run per day: scan + rank + apply. Missed while asleep -> runs on wake;
-                              # missed while off -> runs at next login. Re-run `./agent.sh install` after changing.
+  daily_run_time: "12:00"     # one run per day: scan + rank + apply, at this time or, if the Mac is asleep,
+                              # closed or offline then, at the first 30-min check after it is awake and online.
+                              # Re-run `./agent.sh install` after changing.
   keep_awake_during_run: true # stop the Mac from idle-sleeping while a run is in progress
   launchd_label: com.internship-agent.daily   # name of the macOS background job
 
